@@ -1,0 +1,9 @@
+BEGIN:VCALENDAR
+VERSION:2.0
+PRODID:-//Knaresborough Town//U18 Women//EN
+CALSCALE:GREGORIAN
+METHOD:PUBLISH
+X-WR-CALNAME:Knaresborough Town U18 Women
+X-WR-CALDESC:Knaresborough Town U18 Women fixtures
+X-WR-TIMEZONE:Europe/London
+END:VCALENDAR
