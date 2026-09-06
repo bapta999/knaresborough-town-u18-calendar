@@ -1,4 +1,4 @@
-name: Build Knaresborough Town U18 Women Calendar
+name: Build Knaresborough U18 Women Calendar
 
 on:
   workflow_dispatch:
