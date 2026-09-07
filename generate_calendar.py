@@ -3,26 +3,10 @@ import requests
 from pathlib import Path
 from datetime import datetime, timedelta
 
-TEAM_NAME = "Knaresborough Town U18 Women"
-
-TEAM_URL = (
-    "https://fulltime.thefa.com/fixtures.html?"
-    "selectedSeason=158072627&"
-    "selectedFixtureGroupAgeGroup=0&"
-    "selectedFixtureGroupKey=&"
-    "selectedDateCode=all&"
-    "selectedClub=&"
-    "selectedTeam=241163241&"
-    "selectedRelatedFixtureOption=3&"
-    "selectedFixtureDateStatus=&"
-    "selectedFixtureStatus=&"
-    "previousSelectedFixtureGroupAgeGroup=&"
-    "previousSelectedFixtureGroupKey=&"
-    "previousSelectedClub=&"
-    "itemsPerPage=100"
-)
-
+TEAM_URL = "https://fulltime.thefa.com/displayTeam.html?id=241163241"
 OUTPUT = Path("docs/knaresborough-town-u18-women.ics")
+
+TEAM_NAME = "Knaresborough Town U18 Women"
 
 URL = "https://r.jina.ai/" + TEAM_URL
 
@@ -33,7 +17,9 @@ print("=" * 60)
 response = requests.get(
     URL,
     timeout=60,
-    headers={"User-Agent": "Mozilla/5.0"}
+    headers={
+        "User-Agent": "Mozilla/5.0"
+    }
 )
 
 response.raise_for_status()
@@ -43,8 +29,6 @@ text = response.text
 print("FA page downloaded successfully")
 print("Characters downloaded:", len(text))
 
-
-# Find fixture blocks from the FA Full-Time page.
 fixture_pattern = re.compile(
     r"\|\s*[A-Z]\s*\|\s*"
     r"(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})\s*\|"
@@ -55,16 +39,12 @@ fixture_pattern = re.compile(
 fixtures = []
 
 for match in fixture_pattern.finditer(text):
-
     date_text = match.group(1)
     time_text = match.group(2)
     block = match.group(3)
 
-    # Find the two teams and the fixture link.
     team_links = re.findall(
-        r"\[([^\]]+)\]\(\s*"
-        r"(https://fulltime\.thefa\.com/displayFixture\.html\?id=\d+)"
-        r"\s*\)",
+        r"\[([^\]]+)\]\(\s*(https://fulltime\.thefa\.com/displayFixture\.html\?id=\d+)\s*\)",
         block
     )
 
@@ -75,7 +55,6 @@ for match in fixture_pattern.finditer(text):
     fixture_url = team_links[0][1].strip()
     away = team_links[1][0].strip()
 
-    # Only include fixtures where Knaresborough are actually playing.
     if home != TEAM_NAME and away != TEAM_NAME:
         continue
 
@@ -87,8 +66,6 @@ for match in fixture_pattern.finditer(text):
         "url": fixture_url,
     })
 
-
-# Remove duplicates.
 unique = {}
 
 for fixture in fixtures:
@@ -98,15 +75,12 @@ fixtures = list(unique.values())
 
 
 def sort_key(fixture):
-
     for fmt in ("%d/%m/%y %H:%M", "%d/%m/%Y %H:%M"):
-
         try:
             return datetime.strptime(
                 f"{fixture['date']} {fixture['time']}",
                 fmt
             )
-
         except ValueError:
             pass
 
@@ -122,7 +96,6 @@ print("KNARESBOROUGH TOWN U18 WOMEN FIXTURES FOUND:", len(fixtures))
 print("=" * 60)
 
 for fixture in fixtures:
-
     print(
         fixture["date"],
         fixture["time"],
@@ -133,8 +106,18 @@ for fixture in fixtures:
     )
 
 
-def ics_escape(value):
+# Safety check:
+# Do not create an empty calendar if the FA page format changes
+# or the scraper stops finding fixtures.
 
+if not fixtures:
+    raise SystemExit(
+        "ERROR: No Knaresborough Town U18 Women fixtures found. "
+        "Calendar was NOT updated."
+    )
+
+
+def ics_escape(value):
     return (
         str(value)
         .replace("\\", "\\\\")
@@ -156,14 +139,12 @@ lines = [
     "X-WR-TIMEZONE:Europe/London",
 ]
 
-
 now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
 
 
 for fixture in fixtures:
 
     dt = sort_key(fixture)
-
     end = dt + timedelta(minutes=90)
 
     fixture_id_match = re.search(
@@ -172,25 +153,17 @@ for fixture in fixtures:
     )
 
     if fixture_id_match:
-
         fixture_id = fixture_id_match.group(1)
-
     else:
-
         fixture_id = re.sub(
             r"\W+",
             "",
             fixture["url"]
         )
 
-    uid = (
-        f"{fixture_id}"
-        "@knaresborough-town-u18-calendar"
-    )
+    uid = f"{fixture_id}@knaresborough-town-u18-calendar"
 
-    summary = (
-        f"{fixture['home']} v {fixture['away']}"
-    )
+    summary = f"{fixture['home']} v {fixture['away']}"
 
     description = (
         f"FA Full-Time fixture: "
@@ -202,10 +175,8 @@ for fixture in fixtures:
         "BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{now}",
-        f"DTSTART;TZID=Europe/London:"
-        f"{dt.strftime('%Y%m%dT%H%M%S')}",
-        f"DTEND;TZID=Europe/London:"
-        f"{end.strftime('%Y%m%dT%H%M%S')}",
+        f"DTSTART;TZID=Europe/London:{dt.strftime('%Y%m%dT%H%M%S')}",
+        f"DTEND;TZID=Europe/London:{end.strftime('%Y%m%dT%H%M%S')}",
         f"SUMMARY:{ics_escape(summary)}",
         f"DESCRIPTION:{ics_escape(description)}",
         f"URL:{fixture['url']}",
@@ -215,17 +186,12 @@ for fixture in fixtures:
 
 lines.append("END:VCALENDAR")
 
-
-OUTPUT.parent.mkdir(
-    parents=True,
-    exist_ok=True
-)
+OUTPUT.parent.mkdir(parents=True, exist_ok=True)
 
 OUTPUT.write_text(
     "\r\n".join(lines) + "\r\n",
     encoding="utf-8"
 )
-
 
 print()
 print("=" * 60)
