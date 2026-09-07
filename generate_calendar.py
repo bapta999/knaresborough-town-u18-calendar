@@ -17,9 +17,7 @@ print("=" * 60)
 response = requests.get(
     URL,
     timeout=60,
-    headers={
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers={"User-Agent": "Mozilla/5.0"}
 )
 
 response.raise_for_status()
@@ -58,6 +56,10 @@ for match in fixture_pattern.finditer(text):
     home = team_links[0][0].strip()
     fixture_url = team_links[0][1].strip()
     away = team_links[1][0].strip()
+
+    # Ignore completed fixtures where the second value has become a score
+    if re.fullmatch(r"\d+\s*-\s*\d+", away):
+        continue
 
     if home != TEAM_NAME and away != TEAM_NAME:
         continue
@@ -152,7 +154,6 @@ now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
 for fixture in fixtures:
 
     dt = sort_key(fixture)
-
     end = dt + timedelta(minutes=90)
 
     fixture_id_match = re.search(
