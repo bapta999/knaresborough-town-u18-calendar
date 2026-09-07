@@ -17,7 +17,9 @@ print("=" * 60)
 response = requests.get(
     URL,
     timeout=60,
-    headers={"User-Agent": "Mozilla/5.0"}
+    headers={
+        "User-Agent": "Mozilla/5.0"
+    }
 )
 
 response.raise_for_status()
@@ -57,18 +59,53 @@ for match in fixture_pattern.finditer(text):
     fixture_url = team_links[0][1].strip()
     away = team_links[1][0].strip()
 
-    # Ignore completed fixtures where the second value has become a score
-    if re.fullmatch(r"\d+\s*-\s*\d+", away):
-        continue
-
     if home != TEAM_NAME and away != TEAM_NAME:
         continue
+
+    score_match = re.fullmatch(
+        r"(\d+)\s*-\s*(\d+)",
+        away
+    )
+
+    score = None
+    opponent = None
+
+    if score_match:
+        home_score = int(score_match.group(1))
+        away_score = int(score_match.group(2))
+
+        # The FA page replaces the away-team name with the score
+        # after the match. Find the opponent from the surrounding block.
+        all_text = re.sub(r"\[[^\]]+\]\([^)]+\)", "", block)
+        all_text = re.sub(r"\s+", " ", all_text).strip()
+
+        names = re.findall(
+            r"[A-Za-z][A-Za-z0-9 &'().\-]+",
+            all_text
+        )
+
+        possible_opponents = [
+            name.strip()
+            for name in names
+            if name.strip()
+            and name.strip() != TEAM_NAME
+            and not re.fullmatch(r"\d+\s*-\s*\d+", name.strip())
+        ]
+
+        if possible_opponents:
+            opponent = possible_opponents[-1]
+
+        score = f"{home_score} - {away_score}"
+
+    else:
+        opponent = away
 
     fixtures.append({
         "date": date_text,
         "time": time_text,
         "home": home,
-        "away": away,
+        "away": opponent,
+        "score": score,
         "url": fixture_url,
     })
 
@@ -107,14 +144,24 @@ print("=" * 60)
 
 for fixture in fixtures:
 
-    print(
-        fixture["date"],
-        fixture["time"],
-        "-",
-        fixture["home"],
-        "v",
-        fixture["away"]
-    )
+    if fixture["score"]:
+        print(
+            fixture["date"],
+            fixture["time"],
+            "-",
+            fixture["home"],
+            fixture["score"],
+            fixture["away"]
+        )
+    else:
+        print(
+            fixture["date"],
+            fixture["time"],
+            "-",
+            fixture["home"],
+            "v",
+            fixture["away"]
+        )
 
 
 if not fixtures:
@@ -178,9 +225,19 @@ for fixture in fixtures:
         "@knaresborough-town-u18-calendar"
     )
 
-    summary = (
-        f"{fixture['home']} v {fixture['away']}"
-    )
+    if fixture["score"]:
+
+        summary = (
+            f"{fixture['home']} "
+            f"{fixture['score']} "
+            f"{fixture['away']}"
+        )
+
+    else:
+
+        summary = (
+            f"{fixture['home']} v {fixture['away']}"
+        )
 
     description = (
         f"FA Full-Time fixture: "
