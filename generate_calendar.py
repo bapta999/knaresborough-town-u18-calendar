@@ -3,13 +3,13 @@ import requests
 from pathlib import Path
 from datetime import datetime, timedelta
 
-TEAM_FILTERED_URL = "https://fulltime.thefa.com/fixtures.html?selectedSeason=158072627&selectedFixtureGroupAgeGroup=0&selectedFixtureGroupKey=&selectedDateCode=all&selectedClub=&selectedTeam=241163241&selectedRelatedFixtureOption=3&selectedFixtureDateStatus=&selectedFixtureStatus=&previousSelectedFixtureGroupAgeGroup=&previousSelectedFixtureGroupKey=&previousSelectedClub=&itemsPerPage=25"
+TEAM_URL = "https://fulltime.thefa.com/displayTeam.html?id=241163241"
 
 OUTPUT = Path("docs/knaresborough-town-u18-women.ics")
 
-TEAM_NAME = "Knaresborough Town U18 Girls"
+TEAM_NAME = "Knaresborough Town U18 Women"
 
-URL = "https://r.jina.ai/" + TEAM_FILTERED_URL
+URL = "https://r.jina.ai/" + TEAM_URL
 
 print("=" * 60)
 print("KNARESBOROUGH TOWN U18 WOMEN CALENDAR")
@@ -31,203 +31,217 @@ print("FA page downloaded successfully")
 print("Characters downloaded:", len(text))
 
 
-def clean_cell(value):
+# ------------------------------------------------------------
+# CLEAN TEXT
+# ------------------------------------------------------------
+
+def clean_text(value):
     value = value.strip()
 
-    # Remove complete Markdown image placeholders
-    value = re.sub(
-        r'!\[[^\]]*\]\([^)]+\)',
-        '',
-        value
-    )
-
-    # Remove things such as [Image 51](...)
-    value = re.sub(
-        r'\[\s*Image(?:\s+\d+)?\s*\]\([^)]+\)',
-        '',
-        value,
-        flags=re.IGNORECASE
-    )
-
-    # Remove things such as [Image 51]
-    value = re.sub(
-        r'\[\s*Image(?:\s+\d+)?\s*\]',
-        '',
-        value,
-        flags=re.IGNORECASE
-    )
-
-    # Remove image placeholders such as Image: something
-    value = re.sub(
-        r'Image\s*:\s*[^|]+',
-        '',
-        value,
-        flags=re.IGNORECASE
-    )
-
-    # Remove any remaining plain Image 51 text
-    value = re.sub(
-        r'Image(?:\s+\d+)?',
-        '',
-        value,
-        flags=re.IGNORECASE
-    )
-
-    # Convert normal Markdown links to their visible text
+    # Remove Markdown links but keep their visible text
     value = re.sub(
         r'\[([^\]]+)\]\([^)]+\)',
         r'\1',
         value
     )
 
+    # Remove Markdown image syntax but keep the ALT text
+    value = re.sub(
+        r'!\[([^\]]+)\]\([^)]+\)',
+        r'\1',
+        value
+    )
+
     # Remove HTML
-    value = re.sub(r'<[^>]+>', '', value)
+    value = re.sub(
+        r'<[^>]+>',
+        '',
+        value
+    )
 
-    # Remove empty brackets left behind
-    value = re.sub(r'\[\s*\]', '', value)
-
-    # Tidy whitespace
-    value = re.sub(r'\s+', ' ', value)
+    value = re.sub(
+        r'\s+',
+        ' ',
+        value
+    )
 
     return value.strip()
 
 
-def parse_rows(text):
-    fixtures = []
+# ------------------------------------------------------------
+# EXTRACT FIXTURES
+# ------------------------------------------------------------
 
-    date_re = re.compile(
-        r'\b\d{2}/\d{2}/\d{2,4}\s+\d{1,2}:\d{2}\b'
+fixtures = []
+
+date_pattern = re.compile(
+    r'(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})'
+)
+
+# This recognises both normal fixture links and county cup links
+fixture_url_pattern = re.compile(
+    r'https://fulltime\.thefa\.com/'
+    r'(?:displayFixture|displayCountyFixture)\.html\?id=\d+(?:&[^)\s]+)?'
+)
+
+
+for line in text.splitlines():
+
+    date_match = date_pattern.search(line)
+
+    if not date_match:
+        continue
+
+    if "VS" not in line:
+        continue
+
+    date_text = date_match.group(1)
+    time_text = date_match.group(2)
+
+    # --------------------------------------------------------
+    # Find team names.
+    #
+    # FA/Jina represents them like:
+    #
+    # ![Image 42: Dunnington U18](...)
+    #
+    # We take the text after "Image XX:"
+    # --------------------------------------------------------
+
+    image_names = re.findall(
+        r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
+        line,
+        flags=re.IGNORECASE
     )
 
-    fixture_url_re = re.compile(
-        r'https://fulltime\.thefa\.com/displayFixture\.html\?id=\d+'
-    )
+    # Also allow plain text team names where no image exists
+    if len(image_names) >= 2:
 
-    for line in text.splitlines():
+        home = image_names[0].strip()
+        away = image_names[1].strip()
 
-        if not date_re.search(line):
-            continue
+    else:
 
-        if "|" not in line:
-            continue
-
-        raw_cells = line.split("|")
-        cells = [clean_cell(cell) for cell in raw_cells]
-
-        # Remove completely empty cells
-        cells = [cell for cell in cells if cell]
-
-        if "VS" not in cells:
-            continue
-
-        vs_index = cells.index("VS")
-
-        date_index = None
-
-        for i, cell in enumerate(cells):
-            if date_re.search(cell):
-                date_index = i
-                break
-
-        if date_index is None:
-            continue
-
-        before = cells[date_index + 1:vs_index]
-        after = cells[vs_index + 1:]
-
-        # Remove fixture type such as L or CC
-        before = [
-            x for x in before
-            if x not in ("L", "CC")
-        ]
-
-        if not before or not after:
-            continue
-
-        home = before[0].strip()
-
-        score_pattern = re.compile(
-            r'^\d+\s*-\s*\d+(?:\s*\(.*\))?$'
+        # Fall back to splitting the line around VS
+        before_vs, after_vs = line.split(
+            "VS",
+            1
         )
 
-        score = None
-        away = None
+        before_vs = clean_text(before_vs)
+        after_vs = clean_text(after_vs)
 
-        for cell in after:
+        # Remove the date/time and fixture markers
+        before_vs = re.sub(
+            r'.*?' + re.escape(time_text),
+            '',
+            before_vs,
+            count=1
+        )
 
-            if score_pattern.fullmatch(cell):
-                score = cell
-                continue
+        before_vs = re.sub(
+            r'^\s*[A-Z]{1,2}\s*\|\s*',
+            '',
+            before_vs
+        )
 
-            if cell in ("L", "CC", "Cancelled"):
-                continue
+        home = before_vs.strip()
 
-            if not cell:
-                continue
-
-            away = cell
-            break
+        # Remove everything after the first pipe
+        away = after_vs.split("|")[0].strip()
 
         if not home or not away:
             continue
 
-        # Only include fixtures involving the Knaresborough team
-        if home != TEAM_NAME and away != TEAM_NAME:
-            continue
+    # --------------------------------------------------------
+    # Only include fixtures involving this team
+    # --------------------------------------------------------
 
-        # Find the fixture URL in the original line
-        url_match = fixture_url_re.search(line)
+    if (
+        TEAM_NAME not in home
+        and
+        TEAM_NAME not in away
+        and
+        "Knaresborough Town U18 Girls" not in home
+        and
+        "Knaresborough Town U18 Girls" not in away
+    ):
+        continue
 
-        fixture_url = (
-            url_match.group(0)
-            if url_match
-            else ""
-        )
+    # --------------------------------------------------------
+    # Find fixture URL
+    # --------------------------------------------------------
 
-        date_match = date_re.search(line)
+    url_match = fixture_url_pattern.search(line)
 
-        if not date_match:
-            continue
+    if url_match:
+        fixture_url = url_match.group(0)
+    else:
+        fixture_url = ""
 
-        date_time = date_match.group(0)
+    # --------------------------------------------------------
+    # Look for a score on the same line
+    # --------------------------------------------------------
 
-        fixtures.append({
-            "date_time": date_time,
-            "home": home,
-            "away": away,
-            "score": score,
-            "url": fixture_url
-        })
+    score_match = re.search(
+        r'\b(\d+\s*-\s*\d+)\b',
+        line
+    )
 
-    return fixtures
+    score = None
+
+    if score_match:
+        score = score_match.group(1)
+
+    fixtures.append({
+        "date": date_text,
+        "time": time_text,
+        "home": home,
+        "away": away,
+        "score": score,
+        "url": fixture_url
+    })
 
 
-fixtures = parse_rows(text)
+# ------------------------------------------------------------
+# REMOVE DUPLICATES
+# ------------------------------------------------------------
 
-# Remove duplicates
 unique = {}
 
 for fixture in fixtures:
+
     key = (
-        fixture["date_time"],
+        fixture["date"],
+        fixture["time"],
         fixture["home"],
         fixture["away"]
     )
+
     unique[key] = fixture
+
 
 fixtures = list(unique.values())
 
 
+# ------------------------------------------------------------
+# SORT
+# ------------------------------------------------------------
+
 def sort_key(fixture):
+
     for fmt in (
         "%d/%m/%y %H:%M",
         "%d/%m/%Y %H:%M"
     ):
+
         try:
+
             return datetime.strptime(
-                fixture["date_time"],
+                f"{fixture['date']} {fixture['time']}",
                 fmt
             )
+
         except ValueError:
             pass
 
@@ -237,22 +251,39 @@ def sort_key(fixture):
 fixtures.sort(key=sort_key)
 
 
+# ------------------------------------------------------------
+# SHOW WHAT WE FOUND
+# ------------------------------------------------------------
+
 print()
 print("=" * 60)
 print("FIXTURES FOUND:", len(fixtures))
 print("=" * 60)
 
 for fixture in fixtures:
+
+    result = ""
+
+    if fixture["score"]:
+        result = f" ({fixture['score']})"
+
     print(
-        fixture["date_time"],
+        fixture["date"],
+        fixture["time"],
         "-",
         fixture["home"],
         "v",
-        fixture["away"]
+        fixture["away"],
+        result
     )
 
 
+# ------------------------------------------------------------
+# CREATE ICS
+# ------------------------------------------------------------
+
 def ics_escape(value):
+
     return (
         str(value)
         .replace("\\", "\\\\")
@@ -274,39 +305,63 @@ lines = [
     "X-WR-TIMEZONE:Europe/London",
 ]
 
-now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+now = datetime.utcnow().strftime(
+    "%Y%m%dT%H%M%SZ"
+)
 
 
 for fixture in fixtures:
 
     dt = sort_key(fixture)
-    end = dt + timedelta(minutes=90)
 
+    end = dt + timedelta(
+        minutes=90
+    )
+
+    # Use the FA fixture ID where possible
     fixture_id_match = re.search(
         r'id=(\d+)',
         fixture["url"]
     )
 
     if fixture_id_match:
+
         fixture_id = fixture_id_match.group(1)
+
     else:
+
         fixture_id = re.sub(
             r'\W+',
             '',
-            fixture["date_time"] + fixture["home"] + fixture["away"]
+            fixture["date"]
+            + fixture["time"]
+            + fixture["home"]
+            + fixture["away"]
         )
 
     uid = (
         f"{fixture_id}"
-        f"@knaresborough-town-u18-calendar"
+        "@knaresborough-town-u18-calendar"
     )
+
+    # --------------------------------------------------------
+    # Calendar title
+    # --------------------------------------------------------
 
     summary = (
         f"{fixture['home']} v {fixture['away']}"
     )
 
     if fixture["score"]:
-        summary += f" ({fixture['score']})"
+
+        summary += (
+            f" ({fixture['score']})"
+        )
+
+    # --------------------------------------------------------
+    # Description
+    # --------------------------------------------------------
 
     description = (
         f"FA Full-Time fixture: "
@@ -314,11 +369,13 @@ for fixture in fixtures:
     )
 
     if fixture["score"]:
+
         description += (
             f"\\nResult: {fixture['score']}"
         )
 
     if fixture["url"]:
+
         description += (
             f"\\n{fixture['url']}"
         )
@@ -327,8 +384,14 @@ for fixture in fixtures:
         "BEGIN:VEVENT",
         f"UID:{uid}",
         f"DTSTAMP:{now}",
-        f"DTSTART;TZID=Europe/London:{dt.strftime('%Y%m%dT%H%M%S')}",
-        f"DTEND;TZID=Europe/London:{end.strftime('%Y%m%dT%H%M%S')}",
+        (
+            "DTSTART;TZID=Europe/London:"
+            f"{dt.strftime('%Y%m%dT%H%M%S')}"
+        ),
+        (
+            "DTEND;TZID=Europe/London:"
+            f"{end.strftime('%Y%m%dT%H%M%S')}"
+        ),
         f"SUMMARY:{ics_escape(summary)}",
         f"DESCRIPTION:{ics_escape(description)}",
         f"URL:{fixture['url']}",
@@ -336,7 +399,14 @@ for fixture in fixtures:
     ])
 
 
-lines.append("END:VCALENDAR")
+lines.append(
+    "END:VCALENDAR"
+)
+
+
+# ------------------------------------------------------------
+# WRITE FILE
+# ------------------------------------------------------------
 
 OUTPUT.parent.mkdir(
     parents=True,
@@ -348,10 +418,15 @@ OUTPUT.write_text(
     encoding="utf-8"
 )
 
+
 print()
 print("=" * 60)
 print("CALENDAR CREATED")
 print("=" * 60)
 print("Events written:", len(fixtures))
 print("File:", OUTPUT)
-print("File size:", OUTPUT.stat().st_size, "bytes")
+print(
+    "File size:",
+    OUTPUT.stat().st_size,
+    "bytes"
+)
