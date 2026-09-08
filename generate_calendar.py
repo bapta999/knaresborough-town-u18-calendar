@@ -25,41 +25,36 @@ TEAM_PAGE_URL = (
     "https://fulltime.thefa.com/displayTeam.html?id=241163241"
 )
 
-OUTPUT = Path("docs/knaresborough-town-u18-women.ics")
-
-TEAM_NAMES = {
-    "knaresborough town u18 girls",
-    "knaresborough town u18 women",
-}
-
-DATE_RE = re.compile(
-    r"(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})"
+OUTPUT = Path(
+    "docs/knaresborough-town-u18-women.ics"
 )
 
-FIXTURE_URL_RE = re.compile(
-    r"https://fulltime\.thefa\.com/displayFixture\.html\?id=\d+"
-)
+TEAM_NAME = "Knaresborough Town U18 Girls"
 
 
 def clean_cell(value):
+
     value = value.strip()
 
-    # Remove image markdown completely
+    # Remove image markdown such as:
+    # ![Image 51](...)
     value = re.sub(
         r'!\[[^\]]*\]\([^)]+\)',
         '',
         value
     )
 
-    # Remove plain "Image ..." references
+    # Remove things such as:
+    # Image: Knaresborough Town U18 Women
+    # [Image 51]
     value = re.sub(
-        r'\[?Image(?:\s+\d+)?\]?',
+        r'Image(?:\s+\d+)?(?::)?',
         '',
         value,
         flags=re.IGNORECASE
     )
 
-    # Remove Markdown links but keep their visible text
+    # Convert normal markdown links to their visible text
     value = re.sub(
         r'\[([^\]]+)\]\([^)]+\)',
         r'\1',
@@ -67,51 +62,44 @@ def clean_cell(value):
     )
 
     # Remove HTML
-    value = re.sub(r'<[^>]+>', '', value)
+    value = re.sub(
+        r'<[^>]+>',
+        '',
+        value
+    )
 
-    # Clean up whitespace
-    value = re.sub(r'\s+', ' ', value)
+    # Tidy spaces
+    value = re.sub(
+        r'\s+',
+        ' ',
+        value
+    )
 
     return value.strip()
 
 
-def is_team_name(value):
-    value = value.strip().lower()
+def is_knaresborough(name):
 
-    if not value:
-        return False
-
-    if value in TEAM_NAMES:
-        return True
+    name = name.lower().strip()
 
     return (
-        "u18" in value
-        and (
-            "girls" in value
-            or "women" in value
-        )
+        "knaresborough town u18 girls" in name
+        or
+        "knaresborough town u18 women" in name
     )
 
 
-def parse_rows(text):
+def parse_fixtures(text):
+
     fixtures = []
 
     for line in text.splitlines():
 
-        if not DATE_RE.search(line):
-            continue
-
-        cells = [
-            clean_cell(cell)
-            for cell in line.split("|")
-        ]
-
-        cells = [
-            cell for cell in cells
-            if cell != ""
-        ]
-
-        date_match = DATE_RE.search(line)
+        # We only care about lines containing a date and time
+        date_match = re.search(
+            r'(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})',
+            line
+        )
 
         if not date_match:
             continue
@@ -119,10 +107,25 @@ def parse_rows(text):
         date_text = date_match.group(1)
         time_text = date_match.group(2)
 
+        # Split the markdown table into cells
+        raw_cells = line.split("|")
+
+        cells = [
+            clean_cell(cell)
+            for cell in raw_cells
+        ]
+
+        # Remove empty cells
+        cells = [
+            cell for cell in cells
+            if cell
+        ]
+
         # Find VS
         vs_index = None
 
         for i, cell in enumerate(cells):
+
             if cell.upper() == "VS":
                 vs_index = i
                 break
@@ -130,10 +133,11 @@ def parse_rows(text):
         if vs_index is None:
             continue
 
-        # Everything before VS after the date
+        # Find the date cell
         date_index = None
 
         for i, cell in enumerate(cells):
+
             if date_text in cell:
                 date_index = i
                 break
@@ -141,63 +145,91 @@ def parse_rows(text):
         if date_index is None:
             continue
 
-        before = cells[date_index + 1:vs_index]
-        after = cells[vs_index + 1:]
-
-        # Ignore obvious status / competition text
-        before = [
-            x for x in before
-            if x.upper() not in ("L", "CC")
+        # Team before VS
+        before = cells[
+            date_index + 1:vs_index
         ]
 
-        # First real team before VS
-        home = before[0] if before else ""
+        # Teams / score after VS
+        after = cells[
+            vs_index + 1:
+        ]
 
-        # Find score if present
+        # Remove status / competition labels
+        before = [
+            x for x in before
+            if x.upper() not in (
+                "L",
+                "CC"
+            )
+        ]
+
+        if not before:
+            continue
+
+        home = before[0]
+
+        # Look for a score
         score = None
 
         for cell in after:
+
             if re.fullmatch(
-                r"\d+\s*-\s*\d+(?:\s*\(.*\))?",
+                r'\d+\s*-\s*\d+',
                 cell
             ):
                 score = cell
                 break
 
-        # First non-score cell after VS is normally the away team
+        # Find away team
         away = ""
 
         for cell in after:
+
             if cell == score:
                 continue
 
             if cell.lower() == "venue":
                 continue
 
-            if cell:
-                away = cell
-                break
+            if not cell:
+                continue
 
-        # If the score has replaced the away team,
-        # away will currently be blank.
-        if away and re.fullmatch(r"\d+\s*-\s*\d+.*", away):
+            # Don't accidentally use other metadata
+            if cell.upper() in (
+                "L",
+                "CC"
+            ):
+                continue
+
+            away = cell
+            break
+
+        # If what we found as away is actually a score,
+        # leave it blank so we can recover it below.
+        if re.fullmatch(
+            r'\d+\s*-\s*\d+',
+            away
+        ):
             away = ""
-
-        if not home:
-            continue
 
         # We only want Knaresborough fixtures
         if not (
-            is_team_name(home)
-            or is_team_name(away)
+            is_knaresborough(home)
+            or
+            is_knaresborough(away)
         ):
             continue
 
-        fixture_url_match = FIXTURE_URL_RE.search(line)
+        # Find fixture URL if present
+        url_match = re.search(
+            r'https://fulltime\.thefa\.com/displayFixture\.html\?id=\d+',
+            line
+        )
 
         fixture_url = (
-            fixture_url_match.group(0)
-            if fixture_url_match
+            url_match.group(0)
+            if url_match
             else ""
         )
 
@@ -214,15 +246,21 @@ def parse_rows(text):
 
 
 def fixture_datetime(fixture):
+
     for fmt in (
         "%d/%m/%y %H:%M",
-        "%d/%m/%Y %H:%M",
+        "%d/%m/%Y %H:%M"
     ):
+
         try:
+
             return datetime.strptime(
-                f"{fixture['date']} {fixture['time']}",
+                fixture["date"]
+                + " "
+                + fixture["time"],
                 fmt
             )
+
         except ValueError:
             pass
 
@@ -230,7 +268,11 @@ def fixture_datetime(fixture):
 
 
 def fetch_page(url):
-    jina_url = "https://r.jina.ai/" + url
+
+    jina_url = (
+        "https://r.jina.ai/"
+        + url
+    )
 
     response = requests.get(
         jina_url,
@@ -246,59 +288,70 @@ def fetch_page(url):
 
 
 print("=" * 60)
-print("KNARESBOROUGH TOWN U18 WOMEN CALENDAR")
+print("KNARESBOROUGH TOWN U18 WOMEN")
 print("=" * 60)
 
+print("Downloading team-filtered fixtures...")
+
+text = fetch_page(
+    TEAM_FILTERED_URL
+)
+
+print(
+    "Characters downloaded:",
+    len(text)
+)
+
+fixtures = parse_fixtures(text)
+
+print(
+    "Fixtures found:",
+    len(fixtures)
+)
+
+
 # ------------------------------------------------------------
-# 1. Get the team-filtered fixture list
+# Use the normal team page as a second source.
+# This helps recover opponents for completed matches.
 # ------------------------------------------------------------
 
-text = fetch_page(TEAM_FILTERED_URL)
+print("Downloading main team page...")
 
-print("Team-filtered page downloaded")
-print("Characters downloaded:", len(text))
+team_page_text = fetch_page(
+    TEAM_PAGE_URL
+)
 
-fixtures = parse_rows(text)
-
-print("Fixtures found on team-filtered page:", len(fixtures))
-
-# ------------------------------------------------------------
-# 2. Get the normal team page as a second source.
-#    This is particularly useful for completed results where
-#    Full-Time replaces the opposition with the score.
-# ------------------------------------------------------------
-
-team_page_text = fetch_page(TEAM_PAGE_URL)
-
-team_page_fixtures = parse_rows(team_page_text)
+team_page_fixtures = parse_fixtures(
+    team_page_text
+)
 
 print(
     "Fixtures found on team page:",
     len(team_page_fixtures)
 )
 
+
 # ------------------------------------------------------------
-# 3. Fill in missing opponents / scores from the team page
+# Match the two sources by date and time
 # ------------------------------------------------------------
 
 for fixture in fixtures:
 
-    matching = [
+    matches = [
         other
         for other in team_page_fixtures
         if (
             other["date"] == fixture["date"]
-            and other["time"] == fixture["time"]
+            and
+            other["time"] == fixture["time"]
         )
     ]
 
-    if not matching:
+    if not matches:
         continue
 
-    other = matching[0]
+    other = matches[0]
 
-    # If one source has the opponent and the other doesn't,
-    # use the source that has it.
     if not fixture["away"] and other["away"]:
         fixture["away"] = other["away"]
 
@@ -313,7 +366,7 @@ for fixture in fixtures:
 
 
 # ------------------------------------------------------------
-# 4. Remove duplicates
+# Remove duplicates
 # ------------------------------------------------------------
 
 unique = {}
@@ -324,23 +377,31 @@ for fixture in fixtures:
         fixture["date"],
         fixture["time"],
         fixture["home"],
-        fixture["away"],
+        fixture["away"]
     )
 
     unique[key] = fixture
 
-fixtures = list(unique.values())
 
-fixtures.sort(key=fixture_datetime)
+fixtures = list(
+    unique.values()
+)
+
+fixtures.sort(
+    key=fixture_datetime
+)
 
 
 # ------------------------------------------------------------
-# 5. Print everything found
+# Print final fixtures
 # ------------------------------------------------------------
 
 print()
 print("=" * 60)
-print("FINAL FIXTURES:", len(fixtures))
+print(
+    "FINAL FIXTURES:",
+    len(fixtures)
+)
 print("=" * 60)
 
 for fixture in fixtures:
@@ -358,10 +419,11 @@ for fixture in fixtures:
 
 
 # ------------------------------------------------------------
-# 6. Create iCal
+# Create iCal
 # ------------------------------------------------------------
 
 def ics_escape(value):
+
     return (
         str(value)
         .replace("\\", "\\\\")
@@ -383,31 +445,53 @@ lines = [
     "X-WR-TIMEZONE:Europe/London",
 ]
 
-now = datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+
+now = datetime.utcnow().strftime(
+    "%Y%m%dT%H%M%SZ"
+)
 
 
 for fixture in fixtures:
 
-    dt = fixture_datetime(fixture)
+    dt = fixture_datetime(
+        fixture
+    )
 
     if dt == datetime.max:
         continue
 
-    end = dt + timedelta(minutes=90)
-
-    # Prefer the FA fixture ID for a stable UID.
-    # Otherwise create a stable UID from the teams.
-    fixture_id_match = re.search(
-        r"id=(\d+)",
-        fixture["url"]
+    end = dt + timedelta(
+        minutes=90
     )
 
-    if fixture_id_match:
-        uid = (
-            fixture_id_match.group(1)
-            + "@knaresborough-town-u18-calendar"
+    # Stable fixture ID
+    if fixture["url"]:
+
+        match = re.search(
+            r'id=(\d+)',
+            fixture["url"]
         )
+
+        if match:
+
+            uid = (
+                match.group(1)
+                + "@knaresborough-town-u18-calendar"
+            )
+
+        else:
+
+            uid = hashlib.sha1(
+                (
+                    fixture["home"]
+                    + "|"
+                    + fixture["away"]
+                ).encode()
+            ).hexdigest() \
+                + "@knaresborough-town-u18-calendar"
+
     else:
+
         identity = (
             "158072627|"
             + fixture["home"]
@@ -415,61 +499,83 @@ for fixture in fixtures:
             + fixture["away"]
         )
 
-        uid_hash = hashlib.sha1(
-            identity.encode("utf-8")
-        ).hexdigest()
-
-        uid = (
-            uid_hash
+        uid = hashlib.sha1(
+            identity.encode()
+        ).hexdigest() \
             + "@knaresborough-town-u18-calendar"
+
+
+    # Calendar title
+    if fixture["score"]:
+
+        summary = (
+            fixture["home"]
+            + " "
+            + fixture["score"]
+            + " "
+            + fixture["away"]
         )
 
-    if fixture["score"]:
-        summary = (
-            f"{fixture['home']} "
-            f"{fixture['score']} "
-            f"{fixture['away']}"
-        )
     else:
+
         summary = (
-            f"{fixture['home']} v "
-            f"{fixture['away']}"
+            fixture["home"]
+            + " v "
+            + fixture["away"]
         )
+
 
     description = (
         "FA Full-Time fixture: "
-        f"{fixture['home']} v {fixture['away']}"
+        + fixture["home"]
+        + " v "
+        + fixture["away"]
     )
 
     if fixture["score"]:
+
         description += (
-            f"\\nResult: {fixture['score']}"
+            "\\nResult: "
+            + fixture["score"]
         )
 
     if fixture["url"]:
+
         description += (
-            f"\\n{fixture['url']}"
+            "\\n"
+            + fixture["url"]
         )
+
 
     lines.extend([
         "BEGIN:VEVENT",
-        f"UID:{uid}",
-        f"DTSTAMP:{now}",
-        f"DTSTART;TZID=Europe/London:{dt.strftime('%Y%m%dT%H%M%S')}",
-        f"DTEND;TZID=Europe/London:{end.strftime('%Y%m%dT%H%M%S')}",
-        f"SUMMARY:{ics_escape(summary)}",
-        f"DESCRIPTION:{ics_escape(description)}",
+        "UID:" + uid,
+        "DTSTAMP:" + now,
+        "DTSTART;TZID=Europe/London:"
+        + dt.strftime("%Y%m%dT%H%M%S"),
+        "DTEND;TZID=Europe/London:"
+        + end.strftime("%Y%m%dT%H%M%S"),
+        "SUMMARY:"
+        + ics_escape(summary),
+        "DESCRIPTION:"
+        + ics_escape(description),
     ])
 
+
     if fixture["url"]:
+
         lines.append(
-            f"URL:{fixture['url']}"
+            "URL:" + fixture["url"]
         )
 
-    lines.append("END:VEVENT")
+    lines.append(
+        "END:VEVENT"
+    )
 
 
-lines.append("END:VCALENDAR")
+lines.append(
+    "END:VCALENDAR"
+)
 
 
 OUTPUT.parent.mkdir(
@@ -478,7 +584,8 @@ OUTPUT.parent.mkdir(
 )
 
 OUTPUT.write_text(
-    "\r\n".join(lines) + "\r\n",
+    "\r\n".join(lines)
+    + "\r\n",
     encoding="utf-8"
 )
 
@@ -487,8 +594,14 @@ print()
 print("=" * 60)
 print("CALENDAR CREATED")
 print("=" * 60)
-print("Events written:", len(fixtures))
-print("File:", OUTPUT)
+print(
+    "Events written:",
+    len(fixtures)
+)
+print(
+    "File:",
+    OUTPUT
+)
 print(
     "File size:",
     OUTPUT.stat().st_size,
