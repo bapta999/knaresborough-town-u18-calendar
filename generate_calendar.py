@@ -7,7 +7,10 @@ TEAM_URL = "https://fulltime.thefa.com/displayTeam.html?id=241163241"
 
 OUTPUT = Path("docs/knaresborough-town-u18-women.ics")
 
-TEAM_NAME = "Knaresborough Town U18 Women"
+TEAM_NAMES = [
+    "Knaresborough Town U18 Women",
+    "Knaresborough Town U18 Girls"
+]
 
 URL = "https://r.jina.ai/" + TEAM_URL
 
@@ -32,22 +35,25 @@ print("Characters downloaded:", len(text))
 
 
 # ------------------------------------------------------------
-# CLEAN TEXT
+# HELPERS
 # ------------------------------------------------------------
 
-def clean_text(value):
+def clean_name(value):
     value = value.strip()
 
-    # Remove Markdown links but keep their visible text
-    value = re.sub(
-        r'\[([^\]]+)\]\([^)]+\)',
-        r'\1',
-        value
+    # Extract text from image alt-text
+    image_match = re.search(
+        r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
+        value,
+        flags=re.IGNORECASE
     )
 
-    # Remove Markdown image syntax but keep the ALT text
+    if image_match:
+        return image_match.group(1).strip()
+
+    # Remove normal markdown links
     value = re.sub(
-        r'!\[([^\]]+)\]\([^)]+\)',
+        r'\[([^\]]+)\]\([^)]+\)',
         r'\1',
         value
     )
@@ -68,44 +74,73 @@ def clean_text(value):
     return value.strip()
 
 
+def find_fixture_url(line):
+    # Standard fixtures
+    match = re.search(
+        r'https://fulltime\.thefa\.com/'
+        r'displayFixture\.html\?id=\d+',
+        line
+    )
+
+    if match:
+        return match.group(0)
+
+    # County cup fixtures
+    match = re.search(
+        r'https://fulltime\.thefa\.com/'
+        r'displayCountyFixture\.html\?id=\d+(?:&[^)\s<]+)?',
+        line
+    )
+
+    if match:
+        return match.group(0)
+
+    return ""
+
+
+def parse_date_time(line):
+    match = re.search(
+        r'(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})',
+        line
+    )
+
+    if not match:
+        return None, None
+
+    return match.group(1), match.group(2)
+
+
 # ------------------------------------------------------------
-# EXTRACT FIXTURES
+# FIND FIXTURES
 # ------------------------------------------------------------
 
 fixtures = []
 
-date_pattern = re.compile(
-    r'(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})'
-)
-
-# This recognises both normal fixture links and county cup links
-fixture_url_pattern = re.compile(
-    r'https://fulltime\.thefa\.com/'
-    r'(?:displayFixture|displayCountyFixture)\.html\?id=\d+(?:&[^)\s]+)?'
-)
-
-
 for line in text.splitlines():
 
-    date_match = date_pattern.search(line)
+    date_text, time_text = parse_date_time(line)
 
-    if not date_match:
+    if not date_text:
         continue
 
-    if "VS" not in line:
+    # We now accept both:
+    #
+    #   VS
+    #
+    # and
+    #
+    #   v
+    #
+    if "VS" not in line and " v " not in line:
         continue
-
-    date_text = date_match.group(1)
-    time_text = date_match.group(2)
 
     # --------------------------------------------------------
-    # Find team names.
+    # First try the image alt-text.
     #
-    # FA/Jina represents them like:
+    # Example:
     #
-    # ![Image 42: Dunnington U18](...)
+    # ![Image 47: Knaresborough Town U18 Women]
     #
-    # We take the text after "Image XX:"
     # --------------------------------------------------------
 
     image_names = re.findall(
@@ -114,7 +149,6 @@ for line in text.splitlines():
         flags=re.IGNORECASE
     )
 
-    # Also allow plain text team names where no image exists
     if len(image_names) >= 2:
 
         home = image_names[0].strip()
@@ -122,65 +156,56 @@ for line in text.splitlines():
 
     else:
 
-        # Fall back to splitting the line around VS
-        before_vs, after_vs = line.split(
-            "VS",
-            1
-        )
+        # ----------------------------------------------------
+        # Fall back to the visible text around "v" or "VS"
+        # ----------------------------------------------------
 
-        before_vs = clean_text(before_vs)
-        after_vs = clean_text(after_vs)
+        if " VS " in line:
+            parts = re.split(
+                r'\s+VS\s+',
+                line,
+                maxsplit=1
+            )
+        else:
+            parts = re.split(
+                r'\s+v\s+',
+                line,
+                maxsplit=1
+            )
 
-        # Remove the date/time and fixture markers
-        before_vs = re.sub(
-            r'.*?' + re.escape(time_text),
-            '',
-            before_vs,
-            count=1
-        )
+        if len(parts) != 2:
+            continue
 
-        before_vs = re.sub(
-            r'^\s*[A-Z]{1,2}\s*\|\s*',
-            '',
-            before_vs
-        )
+        home_part = parts[0]
+        away_part = parts[1]
 
-        home = before_vs.strip()
+        # Remove everything before the date/time
+        date_time_text = f"{date_text} {time_text}"
 
-        # Remove everything after the first pipe
-        away = after_vs.split("|")[0].strip()
+        if date_time_text in home_part:
+            home_part = home_part.split(
+                date_time_text,
+                1
+            )[1]
+
+        home = clean_name(home_part)
+        away = clean_name(away_part)
 
         if not home or not away:
             continue
 
     # --------------------------------------------------------
-    # Only include fixtures involving this team
+    # Ignore rows that aren't Knaresborough fixtures
     # --------------------------------------------------------
 
-    if (
-        TEAM_NAME not in home
-        and
-        TEAM_NAME not in away
-        and
-        "Knaresborough Town U18 Girls" not in home
-        and
-        "Knaresborough Town U18 Girls" not in away
+    if not any(
+        team in home or team in away
+        for team in TEAM_NAMES
     ):
         continue
 
     # --------------------------------------------------------
-    # Find fixture URL
-    # --------------------------------------------------------
-
-    url_match = fixture_url_pattern.search(line)
-
-    if url_match:
-        fixture_url = url_match.group(0)
-    else:
-        fixture_url = ""
-
-    # --------------------------------------------------------
-    # Look for a score on the same line
+    # Score
     # --------------------------------------------------------
 
     score_match = re.search(
@@ -192,6 +217,12 @@ for line in text.splitlines():
 
     if score_match:
         score = score_match.group(1)
+
+    # --------------------------------------------------------
+    # Fixture URL
+    # --------------------------------------------------------
+
+    fixture_url = find_fixture_url(line)
 
     fixtures.append({
         "date": date_text,
@@ -220,12 +251,11 @@ for fixture in fixtures:
 
     unique[key] = fixture
 
-
 fixtures = list(unique.values())
 
 
 # ------------------------------------------------------------
-# SORT
+# SORT FIXTURES
 # ------------------------------------------------------------
 
 def sort_key(fixture):
@@ -236,7 +266,6 @@ def sort_key(fixture):
     ):
 
         try:
-
             return datetime.strptime(
                 f"{fixture['date']} {fixture['time']}",
                 fmt
@@ -252,7 +281,7 @@ fixtures.sort(key=sort_key)
 
 
 # ------------------------------------------------------------
-# SHOW WHAT WE FOUND
+# SHOW RESULTS
 # ------------------------------------------------------------
 
 print()
@@ -279,7 +308,7 @@ for fixture in fixtures:
 
 
 # ------------------------------------------------------------
-# CREATE ICS
+# CREATE ICALENDAR
 # ------------------------------------------------------------
 
 def ics_escape(value):
@@ -305,7 +334,6 @@ lines = [
     "X-WR-TIMEZONE:Europe/London",
 ]
 
-
 now = datetime.utcnow().strftime(
     "%Y%m%dT%H%M%SZ"
 )
@@ -319,7 +347,7 @@ for fixture in fixtures:
         minutes=90
     )
 
-    # Use the FA fixture ID where possible
+    # Use FA fixture ID where available
     fixture_id_match = re.search(
         r'id=(\d+)',
         fixture["url"]
@@ -345,10 +373,6 @@ for fixture in fixtures:
         "@knaresborough-town-u18-calendar"
     )
 
-    # --------------------------------------------------------
-    # Calendar title
-    # --------------------------------------------------------
-
     summary = (
         f"{fixture['home']} v {fixture['away']}"
     )
@@ -358,10 +382,6 @@ for fixture in fixtures:
         summary += (
             f" ({fixture['score']})"
         )
-
-    # --------------------------------------------------------
-    # Description
-    # --------------------------------------------------------
 
     description = (
         f"FA Full-Time fixture: "
@@ -405,7 +425,7 @@ lines.append(
 
 
 # ------------------------------------------------------------
-# WRITE FILE
+# WRITE CALENDAR
 # ------------------------------------------------------------
 
 OUTPUT.parent.mkdir(
