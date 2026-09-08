@@ -5,6 +5,11 @@ from datetime import datetime, timedelta
 
 TEAM_URL = "https://fulltime.thefa.com/displayTeam.html?id=241163241"
 
+RESULTS_URL = (
+    "https://fulltime.thefa.com/results.html"
+    "?league=4051434"
+)
+
 OUTPUT = Path("docs/knaresborough-town-u18-women.ics")
 
 TEAM_NAMES = [
@@ -21,9 +26,7 @@ print("=" * 60)
 response = requests.get(
     URL,
     timeout=60,
-    headers={
-        "User-Agent": "Mozilla/5.0"
-    }
+    headers={"User-Agent": "Mozilla/5.0"}
 )
 
 response.raise_for_status()
@@ -39,6 +42,7 @@ print("Characters downloaded:", len(text))
 # ------------------------------------------------------------
 
 def clean_name(value):
+
     value = value.strip()
 
     image_match = re.search(
@@ -72,6 +76,7 @@ def clean_name(value):
 
 
 def find_fixture_url(line):
+
     match = re.search(
         r'https://fulltime\.thefa\.com/'
         r'displayFixture\.html\?id=\d+',
@@ -94,6 +99,7 @@ def find_fixture_url(line):
 
 
 def parse_date_time(line):
+
     match = re.search(
         r'(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})',
         line
@@ -105,20 +111,31 @@ def parse_date_time(line):
     return match.group(1), match.group(2)
 
 
-def get_fixture_id(url):
-    match = re.search(
-        r'id=(\d+)',
-        url
+def normalise_name(name):
+
+    name = name.lower()
+
+    name = name.replace(
+        "knaresborough town u18 women",
+        "knaresborough"
     )
 
-    if match:
-        return match.group(1)
+    name = name.replace(
+        "knaresborough town u18 girls",
+        "knaresborough"
+    )
 
-    return None
+    name = re.sub(
+        r'[^a-z0-9]+',
+        ' ',
+        name
+    )
+
+    return " ".join(name.split())
 
 
 # ------------------------------------------------------------
-# FIND THE 14 FIXTURES
+# FIND FIXTURES
 # ------------------------------------------------------------
 
 fixtures = []
@@ -147,12 +164,15 @@ for line in text.splitlines():
     else:
 
         if " VS " in line:
+
             parts = re.split(
                 r'\s+VS\s+',
                 line,
                 maxsplit=1
             )
+
         else:
+
             parts = re.split(
                 r'\s+v\s+',
                 line,
@@ -165,9 +185,12 @@ for line in text.splitlines():
         home_part = parts[0]
         away_part = parts[1]
 
-        date_time_text = f"{date_text} {time_text}"
+        date_time_text = (
+            f"{date_text} {time_text}"
+        )
 
         if date_time_text in home_part:
+
             home_part = home_part.split(
                 date_time_text,
                 1
@@ -229,6 +252,7 @@ def sort_key(fixture):
     ):
 
         try:
+
             return datetime.strptime(
                 f"{fixture['date']} {fixture['time']}",
                 fmt
@@ -270,131 +294,143 @@ print("CHECKING RESULTS")
 print("=" * 60)
 
 
-def lookup_result(fixture):
+def extract_results_from_page(page_text):
 
-    fixture_url = fixture["url"]
+    results = []
 
-    if not fixture_url:
-        return None
+    for line in page_text.splitlines():
 
-    result_url = "https://r.jina.ai/" + fixture_url
-
-    try:
-
-        result_response = requests.get(
-            result_url,
-            timeout=30,
-            headers={
-                "User-Agent": "Mozilla/5.0"
-            }
+        date_match = re.search(
+            r'(\d{2}/\d{2}/\d{2,4})',
+            line
         )
 
-        if result_response.status_code != 200:
-            return None
+        if not date_match:
+            continue
+
+        score_match = re.search(
+            r'\b(\d+)\s*-\s*(\d+)\b',
+            line
+        )
+
+        if not score_match:
+            continue
+
+        names = re.findall(
+            r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
+            line,
+            flags=re.IGNORECASE
+        )
+
+        if len(names) >= 2:
+
+            results.append({
+                "date": date_match.group(1),
+                "home": names[0].strip(),
+                "away": names[1].strip(),
+                "score": (
+                    f"{score_match.group(1)} - "
+                    f"{score_match.group(2)}"
+                )
+            })
+
+    return results
+
+
+# Try the FA results page through Jina
+result_text = ""
+
+try:
+
+    result_response = requests.get(
+        "https://r.jina.ai/" + RESULTS_URL,
+        timeout=60,
+        headers={
+            "User-Agent": "Mozilla/5.0"
+        }
+    )
+
+    if result_response.status_code == 200:
 
         result_text = result_response.text
 
-        # Look for a normal football score
-        scores = re.findall(
-            r'\b(\d+)\s*-\s*(\d+)\b',
-            result_text
-        )
-
-        if not scores:
-            return None
-
-        # Prefer a score occurring near the team names
-        team_pos = result_text.lower().find(
-            fixture["home"].lower()
-        )
-
-        if team_pos == -1:
-            team_pos = result_text.lower().find(
-                "knaresborough"
-            )
-
-        if team_pos >= 0:
-
-            nearby = result_text[
-                max(0, team_pos - 300):
-                team_pos + 1000
-            ]
-
-            nearby_scores = re.findall(
-                r'\b(\d+)\s*-\s*(\d+)\b',
-                nearby
-            )
-
-            if nearby_scores:
-
-                home_score, away_score = (
-                    nearby_scores[0]
-                )
-
-                return (
-                    f"{home_score} - {away_score}"
-                )
-
-        # Fallback to first score on page
-        home_score, away_score = scores[0]
-
-        return f"{home_score} - {away_score}"
-
-    except Exception as e:
-
         print(
-            "Result lookup failed:",
-            fixture["date"],
-            fixture["home"],
-            "v",
-            fixture["away"],
-            "-",
-            str(e)
+            "Results page downloaded:",
+            len(result_text),
+            "characters"
         )
 
-        return None
+except Exception as e:
+
+    print(
+        "Results page lookup failed:",
+        str(e)
+    )
+
+
+results = extract_results_from_page(
+    result_text
+)
 
 
 # ------------------------------------------------------------
-# LOOK UP RESULTS FOR COMPLETED FIXTURES
+# MATCH RESULTS TO OUR FIXTURES
 # ------------------------------------------------------------
-
-today = datetime.now()
 
 for fixture in fixtures:
 
-    fixture_date = sort_key(fixture)
+    fixture_date = fixture["date"]
 
-    # Only bother checking games that have already happened
-    if fixture_date.date() > today.date():
-        continue
+    fixture_home = normalise_name(
+        fixture["home"]
+    )
 
-    score = lookup_result(fixture)
+    fixture_away = normalise_name(
+        fixture["away"]
+    )
 
-    if score:
-        fixture["score"] = score
+    for result in results:
 
-        print(
-            "RESULT:",
-            fixture["date"],
-            fixture["home"],
-            fixture["score"],
-            fixture["away"]
+        if result["date"] != fixture_date:
+            continue
+
+        result_home = normalise_name(
+            result["home"]
         )
+
+        result_away = normalise_name(
+            result["away"]
+        )
+
+        if (
+            result_home == fixture_home
+            and
+            result_away == fixture_away
+        ):
+
+            fixture["score"] = result["score"]
+
+            print(
+                "RESULT FOUND:",
+                fixture["date"],
+                fixture["home"],
+                fixture["score"],
+                fixture["away"]
+            )
+
+            break
 
 
 # ------------------------------------------------------------
 # KNOWN RESULT FALLBACK
 # ------------------------------------------------------------
 #
-# This is the match we already know was played:
-#
-# 05/09/26
-# Knaresborough Town U18 Girls 6-2
+# 5 September 2026:
+# Knaresborough Town U18 Girls 6 - 2
 # Scarborough Ladies U18 Girls
 #
-# This also protects the calendar if FA Full-Time's result
-# page doesn't expose the score to the scraper.
+# This guarantees that the known result is retained even
+# if Full-Time temporarily fails to expose it.
 # ------------------------------------------------------------
 
 for fixture in fixtures:
@@ -409,14 +445,21 @@ for fixture in fixtures:
 
         fixture["score"] = "6 - 2"
 
+        print(
+            "KNOWN RESULT APPLIED:",
+            fixture["home"],
+            "6 - 2",
+            fixture["away"]
+        )
+
 
 # ------------------------------------------------------------
-# SHOW FINAL FIXTURE LIST
+# FINAL LIST
 # ------------------------------------------------------------
 
 print()
 print("=" * 60)
-print("FINAL CALENDAR FIXTURES")
+print("FINAL CALENDAR")
 print("=" * 60)
 
 for fixture in fixtures:
@@ -483,11 +526,16 @@ for fixture in fixtures:
         minutes=90
     )
 
-    fixture_id = get_fixture_id(
+    fixture_id_match = re.search(
+        r'id=(\d+)',
         fixture["url"]
     )
 
-    if not fixture_id:
+    if fixture_id_match:
+
+        fixture_id = fixture_id_match.group(1)
+
+    else:
 
         fixture_id = re.sub(
             r'\W+',
@@ -502,10 +550,6 @@ for fixture in fixtures:
         f"{fixture_id}"
         "@knaresborough-town-u18-calendar"
     )
-
-    # --------------------------------------------------------
-    # Summary
-    # --------------------------------------------------------
 
     if fixture["score"]:
 
@@ -522,10 +566,6 @@ for fixture in fixtures:
             f"{fixture['away']}"
         )
 
-    # --------------------------------------------------------
-    # Description
-    # --------------------------------------------------------
-
     description = (
         f"FA Full-Time fixture: "
         f"{fixture['home']} v "
@@ -535,8 +575,7 @@ for fixture in fixtures:
     if fixture["score"]:
 
         description += (
-            f"\\nResult: "
-            f"{fixture['score']}"
+            f"\\nResult: {fixture['score']}"
         )
 
     if fixture["url"]:
