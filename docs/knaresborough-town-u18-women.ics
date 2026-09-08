@@ -7,8 +7,16 @@ X-WR-CALNAME:Knaresborough Town U18 Women
 X-WR-CALDESC:Knaresborough Town U18 Women fixtures
 X-WR-TIMEZONE:Europe/London
 BEGIN:VEVENT
+UID:05-09-26-Knaresborough-Town-U18-Women-Scarborough-Ladies-U18@knaresborough-town-u18-calendar
+DTSTAMP:20260908T180628Z
+DTSTART;TZID=Europe/London:20260905T103000
+DTEND;TZID=Europe/London:20260905T120000
+SUMMARY:Knaresborough Town U18 Women 6 - 2 Scarborough Ladies U18
+DESCRIPTION:Knaresborough Town U18 Women result: Knaresborough Town U18 Women 6 - 2 Scarborough Ladies U18
+END:VEVENT
+BEGIN:VEVENT
 UID:30325621@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20260912T103000
 DTEND;TZID=Europe/London:20260912T120000
 SUMMARY:Knaresborough Town U18 Women v Dunnington U18
@@ -17,7 +25,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325621
 END:VEVENT
 BEGIN:VEVENT
 UID:30325614@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20260919T103000
 DTEND;TZID=Europe/London:20260919T120000
 SUMMARY:Knaresborough Town U18 Women v HAMILTON PANTHERS JUNIORS U18 Girls
@@ -26,7 +34,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325614
 END:VEVENT
 BEGIN:VEVENT
 UID:30325616@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20260926T103000
 DTEND;TZID=Europe/London:20260926T120000
 SUMMARY:BISHOPTHORPE WHITE ROSE FC U17 Girls v Knaresborough Town U18 Women
@@ -34,17 +42,16 @@ DESCRIPTION:FA Full-Time fixture: BISHOPTHORPE WHITE ROSE FC U17 Girls v Knaresb
 URL:https://fulltime.thefa.com/displayFixture.html?id=30325616
 END:VEVENT
 BEGIN:VEVENT
-UID:0310261000ShadwellUnitedU17GirlsKnaresboroughTownU18Women@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+UID:03-10-26-Shadwell-United-U17-Girls-Knaresborough-Town-U18-Women-Knaresborough-Town-U18-Women-Shadwell-United-U14-Girls@knaresborough-town-u18-calendar
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261003T100000
 DTEND;TZID=Europe/London:20261003T113000
-SUMMARY:| Shadwell United U17 Girls | | v Knaresborough Town U18 Women
-DESCRIPTION:FA Full-Time fixture: | Shadwell United U17 Girls | | v Knaresborough Town U18 Women
-URL:
+SUMMARY:Shadwell United U17 Girls v Knaresborough Town U18 Women | Knaresborough Town U18 Women | Shadwell United U14 Girls
+DESCRIPTION:Knaresborough Town U18 Women result: Shadwell United U17 Girls None Knaresborough Town U18 Women | Knaresborough Town U18 Women | Shadwell United U14 Girls
 END:VEVENT
 BEGIN:VEVENT
 UID:30325626@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261010T103000
 DTEND;TZID=Europe/London:20261010T120000
 SUMMARY:Fulford Football Club U18 Ladies v Knaresborough Town U18 Women
@@ -53,7 +60,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325626
 END:VEVENT
 BEGIN:VEVENT
 UID:30325628@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261017T103000
 DTEND;TZID=Europe/London:20261017T120000
 SUMMARY:Knaresborough Town U18 Women v Wigginton Grasshoppers U17 Girls
@@ -62,7 +69,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325628
 END:VEVENT
 BEGIN:VEVENT
 UID:30325636@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261114T103000
 DTEND;TZID=Europe/London:20261114T120000
 SUMMARY:NORTHALLERTON TOWN JUNIORS U18 Girls v Knaresborough Town U18 Women
@@ -71,7 +78,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325636
 END:VEVENT
 BEGIN:VEVENT
 UID:30325641@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261121T103000
 DTEND;TZID=Europe/London:20261121T120000
 SUMMARY:SCARBOROUGH LADIES U18 v Knaresborough Town U18 Women
@@ -80,7 +87,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325641
 END:VEVENT
 BEGIN:VEVENT
 UID:30325675@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261128T103000
 DTEND;TZID=Europe/London:20261128T120000
 SUMMARY:Knaresborough Town U18 Women v NORTHALLERTON TOWN JUNIORS U18 Girls
@@ -89,7 +96,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325675
 END:VEVENT
 BEGIN:VEVENT
 UID:30325651@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261205T103000
 DTEND;TZID=Europe/London:20261205T120000
 SUMMARY:HAMILTON PANTHERS JUNIORS U18 Girls v Knaresborough Town U18 Women
@@ -98,7 +105,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325651
 END:VEVENT
 BEGIN:VEVENT
 UID:30325653@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20261212T103000
 DTEND;TZID=Europe/London:20261212T120000
 SUMMARY:Knaresborough Town U18 Women v BISHOPTHORPE WHITE ROSE FC U17 Girls
@@ -107,7 +114,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325653
 END:VEVENT
 BEGIN:VEVENT
 UID:30325657@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20270109T103000
 DTEND;TZID=Europe/London:20270109T120000
 SUMMARY:Dunnington U18 v Knaresborough Town U18 Women
@@ -116,7 +123,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325657
 END:VEVENT
 BEGIN:VEVENT
 UID:30325660@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20270116T103000
 DTEND;TZID=Europe/London:20270116T120000
 SUMMARY:Knaresborough Town U18 Women v Fulford Football Club U18 Ladies
@@ -125,7 +132,7 @@ URL:https://fulltime.thefa.com/displayFixture.html?id=30325660
 END:VEVENT
 BEGIN:VEVENT
 UID:30325667@knaresborough-town-u18-calendar
-DTSTAMP:20260908T175320Z
+DTSTAMP:20260908T180628Z
 DTSTART;TZID=Europe/London:20270123T103000
 DTEND;TZID=Europe/London:20270123T120000
 SUMMARY:Wigginton Grasshoppers U17 Girls v Knaresborough Town U18 Women
