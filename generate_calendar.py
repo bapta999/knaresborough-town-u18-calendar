@@ -41,7 +41,6 @@ print("Characters downloaded:", len(text))
 def clean_name(value):
     value = value.strip()
 
-    # Extract text from image alt-text
     image_match = re.search(
         r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
         value,
@@ -51,14 +50,12 @@ def clean_name(value):
     if image_match:
         return image_match.group(1).strip()
 
-    # Remove normal markdown links
     value = re.sub(
         r'\[([^\]]+)\]\([^)]+\)',
         r'\1',
         value
     )
 
-    # Remove HTML
     value = re.sub(
         r'<[^>]+>',
         '',
@@ -75,7 +72,6 @@ def clean_name(value):
 
 
 def find_fixture_url(line):
-    # Standard fixtures
     match = re.search(
         r'https://fulltime\.thefa\.com/'
         r'displayFixture\.html\?id=\d+',
@@ -85,7 +81,6 @@ def find_fixture_url(line):
     if match:
         return match.group(0)
 
-    # County cup fixtures
     match = re.search(
         r'https://fulltime\.thefa\.com/'
         r'displayCountyFixture\.html\?id=\d+(?:&[^)\s<]+)?',
@@ -110,8 +105,20 @@ def parse_date_time(line):
     return match.group(1), match.group(2)
 
 
+def get_fixture_id(url):
+    match = re.search(
+        r'id=(\d+)',
+        url
+    )
+
+    if match:
+        return match.group(1)
+
+    return None
+
+
 # ------------------------------------------------------------
-# FIND FIXTURES
+# FIND THE 14 FIXTURES
 # ------------------------------------------------------------
 
 fixtures = []
@@ -123,25 +130,8 @@ for line in text.splitlines():
     if not date_text:
         continue
 
-    # We now accept both:
-    #
-    #   VS
-    #
-    # and
-    #
-    #   v
-    #
     if "VS" not in line and " v " not in line:
         continue
-
-    # --------------------------------------------------------
-    # First try the image alt-text.
-    #
-    # Example:
-    #
-    # ![Image 47: Knaresborough Town U18 Women]
-    #
-    # --------------------------------------------------------
 
     image_names = re.findall(
         r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
@@ -155,10 +145,6 @@ for line in text.splitlines():
         away = image_names[1].strip()
 
     else:
-
-        # ----------------------------------------------------
-        # Fall back to the visible text around "v" or "VS"
-        # ----------------------------------------------------
 
         if " VS " in line:
             parts = re.split(
@@ -179,7 +165,6 @@ for line in text.splitlines():
         home_part = parts[0]
         away_part = parts[1]
 
-        # Remove everything before the date/time
         date_time_text = f"{date_text} {time_text}"
 
         if date_time_text in home_part:
@@ -194,33 +179,11 @@ for line in text.splitlines():
         if not home or not away:
             continue
 
-    # --------------------------------------------------------
-    # Ignore rows that aren't Knaresborough fixtures
-    # --------------------------------------------------------
-
     if not any(
         team in home or team in away
         for team in TEAM_NAMES
     ):
         continue
-
-    # --------------------------------------------------------
-    # Score
-    # --------------------------------------------------------
-
-    score_match = re.search(
-        r'\b(\d+\s*-\s*\d+)\b',
-        line
-    )
-
-    score = None
-
-    if score_match:
-        score = score_match.group(1)
-
-    # --------------------------------------------------------
-    # Fixture URL
-    # --------------------------------------------------------
 
     fixture_url = find_fixture_url(line)
 
@@ -229,7 +192,7 @@ for line in text.splitlines():
         "time": time_text,
         "home": home,
         "away": away,
-        "score": score,
+        "score": None,
         "url": fixture_url
     })
 
@@ -255,7 +218,7 @@ fixtures = list(unique.values())
 
 
 # ------------------------------------------------------------
-# SORT FIXTURES
+# SORT
 # ------------------------------------------------------------
 
 def sort_key(fixture):
@@ -280,10 +243,6 @@ def sort_key(fixture):
 fixtures.sort(key=sort_key)
 
 
-# ------------------------------------------------------------
-# SHOW RESULTS
-# ------------------------------------------------------------
-
 print()
 print("=" * 60)
 print("FIXTURES FOUND:", len(fixtures))
@@ -291,24 +250,200 @@ print("=" * 60)
 
 for fixture in fixtures:
 
-    result = ""
-
-    if fixture["score"]:
-        result = f" ({fixture['score']})"
-
     print(
         fixture["date"],
         fixture["time"],
         "-",
         fixture["home"],
         "v",
-        fixture["away"],
-        result
+        fixture["away"]
     )
 
 
 # ------------------------------------------------------------
-# CREATE ICALENDAR
+# RESULT LOOKUP
+# ------------------------------------------------------------
+
+print()
+print("=" * 60)
+print("CHECKING RESULTS")
+print("=" * 60)
+
+
+def lookup_result(fixture):
+
+    fixture_url = fixture["url"]
+
+    if not fixture_url:
+        return None
+
+    result_url = "https://r.jina.ai/" + fixture_url
+
+    try:
+
+        result_response = requests.get(
+            result_url,
+            timeout=30,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
+
+        if result_response.status_code != 200:
+            return None
+
+        result_text = result_response.text
+
+        # Look for a normal football score
+        scores = re.findall(
+            r'\b(\d+)\s*-\s*(\d+)\b',
+            result_text
+        )
+
+        if not scores:
+            return None
+
+        # Prefer a score occurring near the team names
+        team_pos = result_text.lower().find(
+            fixture["home"].lower()
+        )
+
+        if team_pos == -1:
+            team_pos = result_text.lower().find(
+                "knaresborough"
+            )
+
+        if team_pos >= 0:
+
+            nearby = result_text[
+                max(0, team_pos - 300):
+                team_pos + 1000
+            ]
+
+            nearby_scores = re.findall(
+                r'\b(\d+)\s*-\s*(\d+)\b',
+                nearby
+            )
+
+            if nearby_scores:
+
+                home_score, away_score = (
+                    nearby_scores[0]
+                )
+
+                return (
+                    f"{home_score} - {away_score}"
+                )
+
+        # Fallback to first score on page
+        home_score, away_score = scores[0]
+
+        return f"{home_score} - {away_score}"
+
+    except Exception as e:
+
+        print(
+            "Result lookup failed:",
+            fixture["date"],
+            fixture["home"],
+            "v",
+            fixture["away"],
+            "-",
+            str(e)
+        )
+
+        return None
+
+
+# ------------------------------------------------------------
+# LOOK UP RESULTS FOR COMPLETED FIXTURES
+# ------------------------------------------------------------
+
+today = datetime.now()
+
+for fixture in fixtures:
+
+    fixture_date = sort_key(fixture)
+
+    # Only bother checking games that have already happened
+    if fixture_date.date() > today.date():
+        continue
+
+    score = lookup_result(fixture)
+
+    if score:
+        fixture["score"] = score
+
+        print(
+            "RESULT:",
+            fixture["date"],
+            fixture["home"],
+            fixture["score"],
+            fixture["away"]
+        )
+
+
+# ------------------------------------------------------------
+# KNOWN RESULT FALLBACK
+# ------------------------------------------------------------
+#
+# This is the match we already know was played:
+#
+# 05/09/26
+# Knaresborough Town U18 Girls 6-2
+# Scarborough Ladies U18 Girls
+#
+# This also protects the calendar if FA Full-Time's result
+# page doesn't expose the score to the scraper.
+# ------------------------------------------------------------
+
+for fixture in fixtures:
+
+    if (
+        fixture["date"] == "05/09/26"
+        and
+        "Knaresborough" in fixture["home"]
+        and
+        "Scarborough" in fixture["away"]
+    ):
+
+        fixture["score"] = "6 - 2"
+
+
+# ------------------------------------------------------------
+# SHOW FINAL FIXTURE LIST
+# ------------------------------------------------------------
+
+print()
+print("=" * 60)
+print("FINAL CALENDAR FIXTURES")
+print("=" * 60)
+
+for fixture in fixtures:
+
+    if fixture["score"]:
+
+        print(
+            fixture["date"],
+            "-",
+            fixture["home"],
+            fixture["score"],
+            fixture["away"]
+        )
+
+    else:
+
+        print(
+            fixture["date"],
+            "-",
+            fixture["home"],
+            "v",
+            fixture["away"]
+        )
+
+
+# ------------------------------------------------------------
+# ICALENDAR
 # ------------------------------------------------------------
 
 def ics_escape(value):
@@ -334,6 +469,7 @@ lines = [
     "X-WR-TIMEZONE:Europe/London",
 ]
 
+
 now = datetime.utcnow().strftime(
     "%Y%m%dT%H%M%SZ"
 )
@@ -347,17 +483,11 @@ for fixture in fixtures:
         minutes=90
     )
 
-    # Use FA fixture ID where available
-    fixture_id_match = re.search(
-        r'id=(\d+)',
+    fixture_id = get_fixture_id(
         fixture["url"]
     )
 
-    if fixture_id_match:
-
-        fixture_id = fixture_id_match.group(1)
-
-    else:
+    if not fixture_id:
 
         fixture_id = re.sub(
             r'\W+',
@@ -373,25 +503,40 @@ for fixture in fixtures:
         "@knaresborough-town-u18-calendar"
     )
 
-    summary = (
-        f"{fixture['home']} v {fixture['away']}"
-    )
+    # --------------------------------------------------------
+    # Summary
+    # --------------------------------------------------------
 
     if fixture["score"]:
 
-        summary += (
-            f" ({fixture['score']})"
+        summary = (
+            f"{fixture['home']} "
+            f"{fixture['score']} "
+            f"{fixture['away']}"
         )
+
+    else:
+
+        summary = (
+            f"{fixture['home']} v "
+            f"{fixture['away']}"
+        )
+
+    # --------------------------------------------------------
+    # Description
+    # --------------------------------------------------------
 
     description = (
         f"FA Full-Time fixture: "
-        f"{fixture['home']} v {fixture['away']}"
+        f"{fixture['home']} v "
+        f"{fixture['away']}"
     )
 
     if fixture["score"]:
 
         description += (
-            f"\\nResult: {fixture['score']}"
+            f"\\nResult: "
+            f"{fixture['score']}"
         )
 
     if fixture["url"]:
@@ -425,7 +570,7 @@ lines.append(
 
 
 # ------------------------------------------------------------
-# WRITE CALENDAR
+# WRITE FILE
 # ------------------------------------------------------------
 
 OUTPUT.parent.mkdir(
