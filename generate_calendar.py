@@ -44,19 +44,33 @@ FIXTURE_URL_RE = re.compile(
 def clean_cell(value):
     value = value.strip()
 
-    # Remove Markdown links but keep their visible text
+    # Remove image markdown completely
     value = re.sub(
-        r"\[([^\]]+)\]\([^)]+\)",
-        r"\1",
+        r'!\[[^\]]*\]\([^)]+\)',
+        '',
         value
     )
 
-    # Image cells are duplicates of the real team-name cells
-    if value.lower().startswith("image:"):
-        return ""
+    # Remove plain "Image ..." references
+    value = re.sub(
+        r'\[?Image(?:\s+\d+)?\]?',
+        '',
+        value,
+        flags=re.IGNORECASE
+    )
 
-    # Remove HTML if present
-    value = re.sub(r"<[^>]+>", "", value)
+    # Remove Markdown links but keep their visible text
+    value = re.sub(
+        r'\[([^\]]+)\]\([^)]+\)',
+        r'\1',
+        value
+    )
+
+    # Remove HTML
+    value = re.sub(r'<[^>]+>', '', value)
+
+    # Clean up whitespace
+    value = re.sub(r'\s+', ' ', value)
 
     return value.strip()
 
