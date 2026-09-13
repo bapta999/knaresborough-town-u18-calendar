@@ -1,9 +1,19 @@
 import re
 import requests
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timedelta
 
 TEAM_URL = "https://fulltime.thefa.com/displayTeam.html?id=241163241"
+
+RESULTS_URL = (
+    "https://fulltime.thefa.com/index.html"
+    "?league=4051434"
+    "&selectedCompetition=0"
+    "&selectedDivision=113697267"
+    "&selectedFixtureGroupKey=1_431850056"
+    "&selectedSeason=158072627"
+)
+
 OUTPUT = Path("docs/knaresborough-town-u18-women.ics")
 
 TEAM_NAMES = [
@@ -11,7 +21,8 @@ TEAM_NAMES = [
     "Knaresborough Town U18 Girls",
 ]
 
-URL = "https://r.jina.ai/" + TEAM_URL
+TEAM_PAGE_URL = "https://r.jina.ai/" + TEAM_URL
+RESULTS_PAGE_URL = "https://r.jina.ai/" + RESULTS_URL
 
 
 def clean_name(value):
@@ -50,6 +61,18 @@ def parse_date_time(line):
         return None, None
 
     return match.group(1), match.group(2)
+
+
+def parse_date_only(line):
+    match = re.search(
+        r'(\d{2}/\d{2}/\d{2,4})',
+        line
+    )
+
+    if not match:
+        return None
+
+    return match.group(1)
 
 
 def find_fixture_url(line):
@@ -152,21 +175,78 @@ def parse_results(text):
 
     for line in text.splitlines():
 
-        date_text, time_text = parse_date_time(line)
+        date_text = parse_date_only(line)
 
         if not date_text:
             continue
 
-        # Only accept actual numeric scores.
+        # Results pages don't always include the kick-off time.
+        # The York Football League results table uses:
+        #
+        # Date | Home Team | Score | Away Team
+        #
         score_match = re.search(
-            r'\|\s*(\d+)\s*-\s*(\d+)\s*\|',
+            r'\|\s*(\d+)\s*-\s*(\d+)(?:\s*\([^|]*\))?\s*\|',
             line
         )
 
         if not score_match:
             continue
 
-        home, away = extract_teams(line)
+        image_names = re.findall(
+            r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
+            line,
+            flags=re.IGNORECASE
+        )
+
+        image_names = [
+            normalise_team_name(x)
+            for x in image_names
+        ]
+
+        image_names = [
+            x for x in image_names
+            if x
+        ]
+
+        # Results table normally has both team images.
+        if len(image_names) >= 2:
+
+            home = image_names[0]
+            away = image_names[1]
+
+        else:
+
+            # Fall back to the table cells if an image is missing.
+            cells = [
+                clean_name(x)
+                for x in line.split("|")
+            ]
+
+            cells = [
+                x for x in cells
+                if x
+            ]
+
+            home = ""
+            away = ""
+
+            for i, cell in enumerate(cells):
+
+                if re.fullmatch(
+                    r'\d+\s*-\s*\d+',
+                    cell
+                ):
+                    if i > 0:
+                        home = clean_name(cells[i - 1])
+
+                    if i + 1 < len(cells):
+                        away = clean_name(cells[i + 1])
+
+                    break
+
+            home = normalise_team_name(home)
+            away = normalise_team_name(away)
 
         if not home or not away:
             continue
@@ -180,7 +260,9 @@ def parse_results(text):
         home_score = int(score_match.group(1))
         away_score = int(score_match.group(2))
 
-        fixture_url = find_fixture_url(line)
+        # Results pages don't reliably provide the kick-off time.
+        # 10:30 is the normal kick-off time for this team.
+        time_text = "10:30"
 
         results.append({
             "date": date_text,
@@ -189,7 +271,7 @@ def parse_results(text):
             "away": away,
             "home_score": home_score,
             "away_score": away_score,
-            "url": fixture_url,
+            "url": find_fixture_url(line),
         })
 
     return results
@@ -278,7 +360,7 @@ def escape_ics(value):
 print("Downloading Full-Time team page...")
 
 response = requests.get(
-    URL,
+    TEAM_PAGE_URL,
     timeout=60,
     headers={
         "User-Agent": "Mozilla/5.0"
@@ -289,10 +371,27 @@ response.raise_for_status()
 
 text = response.text
 
-print("Characters downloaded:", len(text))
+print("Team page characters downloaded:", len(text))
 
 
-results = parse_results(text)
+print("Downloading Full-Time results page...")
+
+results_response = requests.get(
+    RESULTS_PAGE_URL,
+    timeout=60,
+    headers={
+        "User-Agent": "Mozilla/5.0"
+    }
+)
+
+results_response.raise_for_status()
+
+results_text = results_response.text
+
+print("Results page characters downloaded:", len(results_text))
+
+
+results = parse_results(results_text)
 fixtures = parse_future_fixtures(text)
 
 
@@ -391,12 +490,6 @@ for event in events:
     start = dt.strftime("%Y%m%dT%H%M%S")
 
     # Assume 2-hour match duration.
-    end = dt.replace(
-        hour=(dt.hour + 2) % 24
-    )
-
-    # Safer calculation for times crossing midnight.
-    from datetime import timedelta
     end = dt + timedelta(hours=2)
 
     end_text = end.strftime("%Y%m%dT%H%M%S")
