@@ -7,6 +7,22 @@ X-WR-CALNAME:Knaresborough Town U18 Women
 X-WR-CALDESC:Knaresborough Town U18 Women football fixtures
 X-WR-TIMEZONE:Europe/London
 BEGIN:VEVENT
+UID:050926_1030_KnaresboroughTownU18Women_ScarboroughLadiesU18Girls@knaresborough-town-u18-calendar
+DTSTART;TZID=Europe/London:20260905T103000
+DTEND;TZID=Europe/London:20260905T123000
+SUMMARY:Knaresborough Town U18 Women 6 - 2 Scarborough Ladies U18 Girls
+DESCRIPTION:Result
+URL:https://fulltime.thefa.com/displayFixture.html?id=30325607
+END:VEVENT
+BEGIN:VEVENT
+UID:120926_1030_KnaresboroughTownU18Women_DunningtonU18Girls@knaresborough-town-u18-calendar
+DTSTART;TZID=Europe/London:20260912T103000
+DTEND;TZID=Europe/London:20260912T123000
+SUMMARY:Knaresborough Town U18 Women 8 - 4 Dunnington U18 Girls
+DESCRIPTION:Result
+URL:https://fulltime.thefa.com/displayFixture.html?id=30325621
+END:VEVENT
+BEGIN:VEVENT
 UID:190926_1030_KnaresboroughTownU18Women_HAMILTONPANTHERSJUNIORSU18Girls@knaresborough-town-u18-calendar
 DTSTART;TZID=Europe/London:20260919T103000
 DTEND;TZID=Europe/London:20260919T123000
