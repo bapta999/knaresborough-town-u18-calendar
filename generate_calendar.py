@@ -97,8 +97,7 @@ def extract_teams(line):
     """
     Extract team names from a Full-Time/Jina line.
 
-    First preference is image alt text, because the FA pages
-    generally contain the actual team names there.
+    First preference is image alt text.
     """
 
     image_names = re.findall(
@@ -180,13 +179,19 @@ def parse_results(text):
         if not date_text:
             continue
 
-        # Results pages don't always include the kick-off time.
-        # The York Football League results table uses:
-        #
-        # Date | Home Team | Score | Away Team
-        #
+        # Diagnostic only:
+        # show lines containing the scores we expect.
+        if any(
+            score in line
+            for score in ["6 - 2", "8 - 4", "6–2", "8–4"]
+        ):
+            print()
+            print("POSSIBLE RESULT LINE FOUND:")
+            print(line)
+
+        # Look for a numeric score anywhere in the line.
         score_match = re.search(
-            r'\|\s*(\d+)\s*-\s*(\d+)(?:\s*\([^|]*\))?\s*\|',
+            r'(\d+)\s*[-–]\s*(\d+)',
             line
         )
 
@@ -209,7 +214,6 @@ def parse_results(text):
             if x
         ]
 
-        # Results table normally has both team images.
         if len(image_names) >= 2:
 
             home = image_names[0]
@@ -217,7 +221,7 @@ def parse_results(text):
 
         else:
 
-            # Fall back to the table cells if an image is missing.
+            # Try extracting the teams from table cells.
             cells = [
                 clean_name(x)
                 for x in line.split("|")
@@ -231,19 +235,24 @@ def parse_results(text):
             home = ""
             away = ""
 
+            score_index = None
+
             for i, cell in enumerate(cells):
 
                 if re.fullmatch(
-                    r'\d+\s*-\s*\d+',
+                    r'\d+\s*[-–]\s*\d+',
                     cell
                 ):
-                    if i > 0:
-                        home = clean_name(cells[i - 1])
-
-                    if i + 1 < len(cells):
-                        away = clean_name(cells[i + 1])
-
+                    score_index = i
                     break
+
+            if score_index is not None:
+
+                if score_index > 0:
+                    home = cells[score_index - 1]
+
+                if score_index + 1 < len(cells):
+                    away = cells[score_index + 1]
 
             home = normalise_team_name(home)
             away = normalise_team_name(away)
@@ -260,13 +269,9 @@ def parse_results(text):
         home_score = int(score_match.group(1))
         away_score = int(score_match.group(2))
 
-        # Results pages don't reliably provide the kick-off time.
-        # 10:30 is the normal kick-off time for this team.
-        time_text = "10:30"
-
         results.append({
             "date": date_text,
-            "time": time_text,
+            "time": "10:30",
             "home": home,
             "away": away,
             "home_score": home_score,
@@ -287,12 +292,10 @@ def parse_future_fixtures(text):
         if not date_text:
             continue
 
-        # Future fixtures have VS or v, rather than a numeric score.
         if not re.search(r'\s(?:VS|v)\s', line):
             continue
 
-        # Don't accidentally treat a completed result as a fixture.
-        if re.search(r'\|\s*\d+\s*-\s*\d+\s*\|', line):
+        if re.search(r'\|\s*\d+\s*[-–]\s*\d+\s*\|', line):
             continue
 
         home, away = extract_teams(line)
@@ -391,6 +394,29 @@ results_text = results_response.text
 print("Results page characters downloaded:", len(results_text))
 
 
+print()
+print("SEARCHING RESULTS PAGE FOR SCORES...")
+
+for score in ["6 - 2", "8 - 4", "6–2", "8–4"]:
+
+    position = results_text.find(score)
+
+    if position >= 0:
+
+        print()
+        print("FOUND:", score)
+        print(
+            results_text[
+                max(0, position - 500):
+                position + 500
+            ]
+        )
+
+    else:
+
+        print("NOT FOUND:", score)
+
+
 results = parse_results(results_text)
 fixtures = parse_future_fixtures(text)
 
@@ -399,12 +425,14 @@ fixtures = parse_future_fixtures(text)
 unique_results = {}
 
 for result in results:
+
     key = (
         result["date"],
         result["time"],
         result["home"],
         result["away"]
     )
+
     unique_results[key] = result
 
 results = list(unique_results.values())
@@ -414,12 +442,14 @@ results = list(unique_results.values())
 unique_fixtures = {}
 
 for fixture in fixtures:
+
     key = (
         fixture["date"],
         fixture["time"],
         fixture["home"],
         fixture["away"]
     )
+
     unique_fixtures[key] = fixture
 
 fixtures = list(unique_fixtures.values())
@@ -429,6 +459,7 @@ print()
 print("RESULTS FOUND:", len(results))
 
 for result in results:
+
     print(
         f'{result["date"]} {result["time"]} - '
         f'{result["home"]} '
@@ -441,6 +472,7 @@ print()
 print("FUTURE FIXTURES FOUND:", len(fixtures))
 
 for fixture in fixtures:
+
     print(
         f'{fixture["date"]} {fixture["time"]} - '
         f'{fixture["home"]} v {fixture["away"]}'
