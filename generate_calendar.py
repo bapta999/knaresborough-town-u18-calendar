@@ -32,9 +32,30 @@ def clean_name(value):
         value,
         flags=re.IGNORECASE
     )
-    value = re.sub(r'\[([^\]]+)\]\([^)]*\)', r'\1', value)
+
+    value = re.sub(
+        r'!\[[^\]]*\]\([^)]*\)',
+        '',
+        value
+    )
+
+    value = re.sub(
+        r'\[([^\]]+)\]\([^)]*\)',
+        r'\1',
+        value
+    )
+
     value = re.sub(r'https?://\S+', '', value)
+
+    value = re.sub(
+        r'\bImage\s*\d*\s*:\s*',
+        '',
+        value,
+        flags=re.IGNORECASE
+    )
+
     value = re.sub(r'\s+', ' ', value)
+
     return value.strip(" |:-")
 
 
@@ -94,12 +115,6 @@ def is_our_team(name):
 
 
 def extract_teams(line):
-    """
-    Extract team names from a Full-Time/Jina line.
-
-    First preference is image alt text.
-    """
-
     image_names = re.findall(
         r'!\[Image\s*\d*\s*:\s*([^\]]+)\]',
         line,
@@ -119,7 +134,6 @@ def extract_teams(line):
     if len(image_names) >= 2:
         return image_names[0], image_names[1]
 
-    # Normal fixture: Team VS Team
     match = re.search(
         r'\s+VS\s+',
         line,
@@ -143,7 +157,6 @@ def extract_teams(line):
 
         return home, away
 
-    # Cup fixtures sometimes use lower-case "v"
     match = re.search(
         r'\s+v\s+',
         line
@@ -179,8 +192,6 @@ def parse_results(text):
         if not date_text:
             continue
 
-        # Diagnostic only:
-        # show lines containing the scores we expect.
         if any(
             score in line
             for score in ["6 - 2", "8 - 4", "6–2", "8–4"]
@@ -189,7 +200,6 @@ def parse_results(text):
             print("POSSIBLE RESULT LINE FOUND:")
             print(line)
 
-        # Look for a numeric score anywhere in the line.
         score_match = re.search(
             r'(\d+)\s*[-–]\s*(\d+)',
             line
@@ -201,26 +211,14 @@ def parse_results(text):
         home = ""
         away = ""
 
-        # ------------------------------------------------------------
         # IMPORTANT:
-        # Full-Time's image alt text can say things like
-        # "Dunnington U18 Girls", while the actual fixture name is
-        # "Dunnington U18".
-        #
-        # The actual team names are the normal Markdown links either
-        # side of the score link:
-        #
-        # [Knaresborough Town U18 Women](fixture)
-        # ![image](...)
-        # [8 - 4](fixture)
-        # ![image](...)
-        # [Dunnington U18](fixture)
-        #
-        # So use those linked names first.
-        # ------------------------------------------------------------
-
+        # (?<!!) means "the opening [ must NOT be preceded by !".
+        # This prevents Markdown image links such as
+        # ![Image 18: Team Name](...) from being treated as team links.
         links = re.findall(
-            r'\[([^\]]+)\]\(([^)]+)\)',
+            r'(?<!!)'
+            r'\[([^\]]+)\]'
+            r'\(([^)]+)\)',
             line
         )
 
@@ -238,8 +236,6 @@ def parse_results(text):
 
         if score_link_index is not None:
 
-            # The normal link immediately before the score is the
-            # actual home-team display name.
             if score_link_index > 0:
 
                 possible_home = links[
@@ -251,8 +247,6 @@ def parse_results(text):
                         possible_home
                     )
 
-            # The normal link immediately after the score is the
-            # actual away-team display name.
             if score_link_index + 1 < len(links):
 
                 possible_away = links[
@@ -263,11 +257,6 @@ def parse_results(text):
                     away = normalise_team_name(
                         possible_away
                     )
-
-        # ------------------------------------------------------------
-        # Fallback to the old image-name method if the Markdown-link
-        # structure isn't available.
-        # ------------------------------------------------------------
 
         if not home or not away:
 
@@ -291,10 +280,6 @@ def parse_results(text):
 
                 home = image_names[0]
                 away = image_names[1]
-
-        # ------------------------------------------------------------
-        # Final fallback: try extracting the teams from table cells.
-        # ------------------------------------------------------------
 
         if not home or not away:
 
