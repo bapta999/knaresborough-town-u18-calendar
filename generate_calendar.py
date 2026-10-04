@@ -192,14 +192,6 @@ def parse_results(text):
         if not date_text:
             continue
 
-        if any(
-            score in line
-            for score in ["6 - 2", "8 - 4", "6–2", "8–4"]
-        ):
-            print()
-            print("POSSIBLE RESULT LINE FOUND:")
-            print(line)
-
         score_match = re.search(
             r'(\d+)\s*[-–]\s*(\d+)',
             line
@@ -212,9 +204,9 @@ def parse_results(text):
         away = ""
 
         # IMPORTANT:
-        # (?<!!) means "the opening [ must NOT be preceded by !".
-        # This prevents Markdown image links such as
-        # ![Image 18: Team Name](...) from being treated as team links.
+        # (?<!!) means the opening [ must NOT be preceded by !.
+        # This prevents Markdown image links from being treated
+        # as normal team links.
         links = re.findall(
             r'(?<!!)'
             r'\[([^\]]+)\]'
@@ -227,10 +219,15 @@ def parse_results(text):
         for i, (link_text, link_url) in enumerate(links):
 
             if re.fullmatch(
-                r'\d+\s*[-–]\s*\d+',
+                r'\d+\s*[-–]\s*\d+(?:\s*\(HT\s*\d+[-–]\d+\))?',
                 link_text.strip()
             ):
-                if "displayFixture" in link_url:
+                # Both normal league fixtures and cup/county
+                # fixtures are valid.
+                if (
+                    "displayFixture" in link_url
+                    or "displayCountyFixture" in link_url
+                ):
                     score_link_index = i
                     break
 
@@ -258,6 +255,7 @@ def parse_results(text):
                         possible_away
                     )
 
+        # Fallback to image alt text.
         if not home or not away:
 
             image_names = re.findall(
@@ -281,6 +279,7 @@ def parse_results(text):
                 home = image_names[0]
                 away = image_names[1]
 
+        # Final fallback to table cells.
         if not home or not away:
 
             cells = [
@@ -298,7 +297,7 @@ def parse_results(text):
             for i, cell in enumerate(cells):
 
                 if re.fullmatch(
-                    r'\d+\s*[-–]\s*\d+',
+                    r'\d+\s*[-–]\s*\d+(?:\s*\(HT\s*\d+[-–]\d+\))?',
                     cell
                 ):
                     score_index = i
@@ -326,6 +325,12 @@ def parse_results(text):
 
         home_score = int(score_match.group(1))
         away_score = int(score_match.group(2))
+
+        # Avoid accidentally interpreting a score elsewhere on
+        # the page as a football result unless the match itself
+        # contains Knaresborough.
+        if not is_our_team(home) and not is_our_team(away):
+            continue
 
         results.append({
             "date": date_text,
@@ -453,29 +458,34 @@ print("Results page characters downloaded:", len(results_text))
 
 
 print()
-print("SEARCHING RESULTS PAGE FOR SCORES...")
+print("PARSING RESULTS FROM TEAM PAGE...")
 
-for score in ["6 - 2", "8 - 4", "6–2", "8–4"]:
+team_page_results = parse_results(text)
 
-    position = results_text.find(score)
-
-    if position >= 0:
-
-        print()
-        print("FOUND:", score)
-        print(
-            results_text[
-                max(0, position - 500):
-                position + 500
-            ]
-        )
-
-    else:
-
-        print("NOT FOUND:", score)
+print(
+    "Team page results found:",
+    len(team_page_results)
+)
 
 
-results = parse_results(results_text)
+print()
+print("PARSING RESULTS FROM RESULTS PAGE...")
+
+results_page_results = parse_results(results_text)
+
+print(
+    "Results page results found:",
+    len(results_page_results)
+)
+
+
+# Combine both result sources.
+#
+# The team page is now important because it includes cup results
+# which may not appear in the league-specific results page.
+results = team_page_results + results_page_results
+
+
 fixtures = parse_future_fixtures(text)
 
 
@@ -486,9 +496,10 @@ for result in results:
 
     key = (
         result["date"],
-        result["time"],
         result["home"],
-        result["away"]
+        result["away"],
+        result["home_score"],
+        result["away_score"]
     )
 
     unique_results[key] = result
@@ -535,6 +546,27 @@ for fixture in fixtures:
         f'{fixture["date"]} {fixture["time"]} - '
         f'{fixture["home"]} v {fixture["away"]}'
     )
+
+
+# Remove any fixture which has now become a result.
+result_keys = {
+    (
+        result["date"],
+        result["home"],
+        result["away"]
+    )
+    for result in results
+}
+
+fixtures = [
+    fixture
+    for fixture in fixtures
+    if (
+        fixture["date"],
+        fixture["home"],
+        fixture["away"]
+    ) not in result_keys
+]
 
 
 # Combine results and future fixtures.
