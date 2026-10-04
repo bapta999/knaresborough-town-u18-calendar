@@ -72,6 +72,65 @@ def normalise_team_name(name):
     return name
 
 
+def result_identity_name(name):
+    """
+    Creates a conservative identity used ONLY for deduplication.
+
+    The FA sometimes displays the same opponent differently on
+    different pages, for example:
+
+      Bishopthorpe White Rose U17 Girls
+      BISHOPTHORPE WHITE ROSE FC U17 Girls
+
+      Hamilton Panthers U18 Girls
+      HAMILTON PANTHERS JUNIORS U18 Girls
+
+      Dunnington U18 Girls
+      Dunnington U18
+
+    These should be treated as the same team for deduplication,
+    while the original display name is retained in the calendar.
+    """
+
+    name = normalise_team_name(name).upper()
+
+    name = re.sub(
+        r'\bFC\b',
+        '',
+        name
+    )
+
+    name = re.sub(
+        r'\bJUNIORS?\b',
+        '',
+        name
+    )
+
+    name = re.sub(
+        r'\bGIRLS\b',
+        '',
+        name
+    )
+
+    name = re.sub(
+        r'\bWOMEN\b',
+        '',
+        name
+    )
+
+    name = re.sub(
+        r'\bLADIES\b',
+        '',
+        name
+    )
+
+    name = re.sub(r'[^A-Z0-9]+', ' ', name)
+
+    name = re.sub(r'\s+', ' ', name)
+
+    return name.strip()
+
+
 def parse_date_time(line):
     match = re.search(
         r'(\d{2}/\d{2}/\d{2,4})\s+(\d{1,2}:\d{2})',
@@ -203,10 +262,9 @@ def parse_results(text):
         home = ""
         away = ""
 
-        # IMPORTANT:
         # (?<!!) means the opening [ must NOT be preceded by !.
-        # This prevents Markdown image links from being treated
-        # as normal team links.
+        # This prevents Markdown image links being treated as
+        # normal team links.
         links = re.findall(
             r'(?<!!)'
             r'\[([^\]]+)\]'
@@ -222,8 +280,7 @@ def parse_results(text):
                 r'\d+\s*[-–]\s*\d+(?:\s*\(HT\s*\d+[-–]\d+\))?',
                 link_text.strip()
             ):
-                # Both normal league fixtures and cup/county
-                # fixtures are valid.
+
                 if (
                     "displayFixture" in link_url
                     or "displayCountyFixture" in link_url
@@ -326,12 +383,6 @@ def parse_results(text):
         home_score = int(score_match.group(1))
         away_score = int(score_match.group(2))
 
-        # Avoid accidentally interpreting a score elsewhere on
-        # the page as a football result unless the match itself
-        # contains Knaresborough.
-        if not is_our_team(home) and not is_our_team(away):
-            continue
-
         results.append({
             "date": date_text,
             "time": "10:30",
@@ -340,6 +391,85 @@ def parse_results(text):
             "home_score": home_score,
             "away_score": away_score,
             "url": find_fixture_url(line),
+        })
+
+    return results
+
+
+def parse_existing_results():
+    """
+    Read results already present in the existing ICS.
+
+    This prevents older completed matches disappearing simply
+    because the FA has stopped showing them on its current
+    results pages.
+    """
+
+    if not OUTPUT.exists():
+        return []
+
+    text = OUTPUT.read_text(
+        encoding="utf-8"
+    )
+
+    results = []
+
+    events = re.findall(
+        r'BEGIN:VEVENT(.*?)END:VEVENT',
+        text,
+        flags=re.DOTALL
+    )
+
+    for event in events:
+
+        summary_match = re.search(
+            r'^SUMMARY:(.*)$',
+            event,
+            flags=re.MULTILINE
+        )
+
+        start_match = re.search(
+            r'DTSTART[^:]*:(\d{8})T(\d{6})',
+            event
+        )
+
+        if not summary_match or not start_match:
+            continue
+
+        summary = summary_match.group(1)
+
+        score_match = re.match(
+            r'(.+?)\s+(\d+)\s*-\s*(\d+)\s+(.+)',
+            summary
+        )
+
+        if not score_match:
+            continue
+
+        home = score_match.group(1).replace("\\,", ",")
+        away = score_match.group(4).replace("\\,", ",")
+        home_score = int(score_match.group(2))
+        away_score = int(score_match.group(3))
+
+        date_raw = start_match.group(1)
+        time_raw = start_match.group(2)
+
+        try:
+            dt = datetime.strptime(
+                date_raw + time_raw,
+                "%Y%m%d%H%M%S"
+            )
+        except ValueError:
+            continue
+
+        results.append({
+            "date": dt.strftime("%d/%m/%y"),
+            "time": dt.strftime("%H:%M"),
+            "home": home,
+            "away": away,
+            "home_score": home_score,
+            "away_score": away_score,
+            "url": "",
         })
 
     return results
@@ -423,6 +553,17 @@ def escape_ics(value):
     )
 
 
+print("Reading existing calendar...")
+
+existing_results = parse_existing_results()
+
+print(
+    "Existing results retained:",
+    len(existing_results)
+)
+
+
+print()
 print("Downloading Full-Time team page...")
 
 response = requests.get(
@@ -437,9 +578,13 @@ response.raise_for_status()
 
 text = response.text
 
-print("Team page characters downloaded:", len(text))
+print(
+    "Team page characters downloaded:",
+    len(text)
+)
 
 
+print()
 print("Downloading Full-Time results page...")
 
 results_response = requests.get(
@@ -454,7 +599,10 @@ results_response.raise_for_status()
 
 results_text = results_response.text
 
-print("Results page characters downloaded:", len(results_text))
+print(
+    "Results page characters downloaded:",
+    len(results_text)
+)
 
 
 print()
@@ -479,35 +627,55 @@ print(
 )
 
 
-# Combine both result sources.
+# Combine:
 #
-# The team page is now important because it includes cup results
-# which may not appear in the league-specific results page.
-results = team_page_results + results_page_results
+# 1. Results already in the calendar
+# 2. Fresh results from the team page
+# 3. Fresh results from the results page
+#
+# Fresh results are added after existing results so that current
+# FA data takes precedence where the same match is found.
+
+all_results = (
+    existing_results
+    + team_page_results
+    + results_page_results
+)
+
+
+# Deduplicate results using a normalised identity for each team.
+#
+# This deals with FA naming differences such as:
+#
+# Bishopthorpe White Rose U17 Girls
+# BISHOPTHORPE WHITE ROSE FC U17 Girls
+#
+# Hamilton Panthers U18 Girls
+# HAMILTON PANTHERS JUNIORS U18 Girls
+#
+# Dunnington U18 Girls
+# Dunnington U18
+
+unique_results = {}
+
+for result in all_results:
+
+    key = (
+        result["date"],
+        result_identity_name(result["home"]),
+        result_identity_name(result["away"])
+    )
+
+    unique_results[key] = result
+
+
+results = list(unique_results.values())
 
 
 fixtures = parse_future_fixtures(text)
 
 
-# Remove duplicate results.
-unique_results = {}
-
-for result in results:
-
-    key = (
-        result["date"],
-        result["home"],
-        result["away"],
-        result["home_score"],
-        result["away_score"]
-    )
-
-    unique_results[key] = result
-
-results = list(unique_results.values())
-
-
-# Remove duplicate fixtures.
+# Remove duplicate future fixtures.
 unique_fixtures = {}
 
 for fixture in fixtures:
@@ -515,8 +683,8 @@ for fixture in fixtures:
     key = (
         fixture["date"],
         fixture["time"],
-        fixture["home"],
-        fixture["away"]
+        result_identity_name(fixture["home"]),
+        result_identity_name(fixture["away"])
     )
 
     unique_fixtures[key] = fixture
@@ -552,8 +720,8 @@ for fixture in fixtures:
 result_keys = {
     (
         result["date"],
-        result["home"],
-        result["away"]
+        result_identity_name(result["home"]),
+        result_identity_name(result["away"])
     )
     for result in results
 }
@@ -563,8 +731,8 @@ fixtures = [
     for fixture in fixtures
     if (
         fixture["date"],
-        fixture["home"],
-        fixture["away"]
+        result_identity_name(fixture["home"]),
+        result_identity_name(fixture["away"])
     ) not in result_keys
 ]
 
