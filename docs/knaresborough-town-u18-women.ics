@@ -55,6 +55,13 @@ DESCRIPTION:Upcoming fixture
 URL:https://fulltime.thefa.com/displayFixture.html?id=30325628
 END:VEVENT
 BEGIN:VEVENT
+UID:071126_1000_LeedsCityJuniorsU18Girls_KnaresboroughTownU18Women@knaresborough-town-u18-calendar
+DTSTART;TZID=Europe/London:20261107T100000
+DTEND;TZID=Europe/London:20261107T120000
+SUMMARY:Leeds City Juniors U18 Girls v Knaresborough Town U18 Women
+DESCRIPTION:Upcoming fixture
+END:VEVENT
+BEGIN:VEVENT
 UID:071126_1030_KnaresboroughTownU18Women_BISHOPTHORPEWHITEROSEFCU17Girls@knaresborough-town-u18-calendar
 DTSTART;TZID=Europe/London:20261107T103000
 DTEND;TZID=Europe/London:20261107T123000
