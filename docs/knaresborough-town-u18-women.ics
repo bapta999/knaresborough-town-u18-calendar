@@ -58,8 +58,8 @@ BEGIN:VEVENT
 UID:171026_1030_KnaresboroughTownU18Women_WiggintonGrasshoppersU17Girls@knaresborough-town-u18-calendar
 DTSTART;TZID=Europe/London:20261017T103000
 DTEND;TZID=Europe/London:20261017T123000
-SUMMARY:Knaresborough Town U18 Women v Wigginton Grasshoppers U17 Girls
-DESCRIPTION:Upcoming fixture
+SUMMARY:Knaresborough Town U18 Women 6 - 5 Wigginton Grasshoppers U17 Girls
+DESCRIPTION:Result
 URL:https://fulltime.thefa.com/displayFixture.html?id=30325628
 END:VEVENT
 BEGIN:VEVENT
