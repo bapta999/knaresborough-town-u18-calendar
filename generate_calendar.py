@@ -1,8 +1,8 @@
-
 import re
 import requests
 from pathlib import Path
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 
 TEAM_URL = "https://fulltime.thefa.com/displayTeam.html?id=241163241"
 
@@ -24,6 +24,8 @@ TEAM_NAMES = [
 
 TEAM_PAGE_URL = "https://r.jina.ai/" + TEAM_URL
 RESULTS_PAGE_URL = "https://r.jina.ai/" + RESULTS_URL
+
+LONDON_TZ = ZoneInfo("Europe/London")
 
 
 def clean_name(value):
@@ -61,7 +63,7 @@ def normalise_team_name(name):
 
 def result_identity_name(name):
     """
-    Conservative identity used only for deduplication.
+    Conservative identity used for deduplication.
     Original display names are retained in the calendar.
     """
     name = normalise_team_name(name).upper()
@@ -79,6 +81,21 @@ def result_identity_name(name):
     name = re.sub(r'\s+', ' ', name)
 
     return name.strip()
+
+
+def same_team(home, away):
+    """
+    Returns True if the home and away names resolve to the same team.
+    Uses the same identity normalisation as result deduplication.
+    """
+    home_identity = result_identity_name(home)
+    away_identity = result_identity_name(away)
+
+    return (
+        bool(home_identity)
+        and bool(away_identity)
+        and home_identity == away_identity
+    )
 
 
 def parse_date_time(line):
@@ -264,6 +281,17 @@ def parse_results(text):
         if not is_our_team(home) and not is_our_team(away):
             continue
 
+        # Reject incorrectly parsed self-versus-self results.
+        if same_team(home, away):
+            print(
+                "Ignoring invalid self-versus-self result:",
+                date_text,
+                home,
+                "v",
+                away
+            )
+            continue
+
         results.append({
             "date": date_text,
             "time": "10:30",
@@ -300,6 +328,18 @@ def parse_future_fixtures(text):
         if not is_our_team(home) and not is_our_team(away):
             continue
 
+        # Reject incorrectly parsed self-versus-self fixtures.
+        if same_team(home, away):
+            print(
+                "Ignoring invalid self-versus-self fixture:",
+                date_text,
+                time_text,
+                home,
+                "v",
+                away
+            )
+            continue
+
         fixtures.append({
             "date": date_text,
             "time": time_text,
@@ -322,7 +362,11 @@ def unescape_ics(value):
 
 def parse_existing_events():
     """
-    Preserve both results and upcoming fixtures from the existing ICS.
+    Read existing calendar events so that results can be retained
+    if they disappear from the source pages.
+
+    Existing fixtures are also read here, but are subsequently
+    checked for validity, expiry and whether they have become results.
     """
     if not OUTPUT.exists():
         return []
@@ -391,6 +435,17 @@ def parse_existing_events():
         away = normalise_team_name(away)
 
         if not is_our_team(home) and not is_our_team(away):
+            continue
+
+        # Reject any invalid self-versus-self event already in the ICS.
+        if same_team(home, away):
+            print(
+                "Ignoring invalid existing self-versus-self event:",
+                dt.strftime("%d/%m/%y %H:%M"),
+                home,
+                "v",
+                away
+            )
             continue
 
         preserved.append({
@@ -482,6 +537,97 @@ def escape_ics(value):
     )
 
 
+def fixture_result_key(event):
+    """
+    Identity for matching a fixture to a result.
+    The time is intentionally excluded because result records
+    and fixture records can use different default times.
+    """
+    return (
+        event["date"],
+        result_identity_name(event["home"]),
+        result_identity_name(event["away"])
+    )
+
+
+def deduplicate_results(all_results):
+    """
+    Deduplicate results by date and team identity.
+    If two source pages use slightly different names for the
+    same teams, only one result is retained.
+    """
+    unique_results = {}
+
+    for result in all_results:
+        if same_team(result["home"], result["away"]):
+            print(
+                "Ignoring self-versus-self result:",
+                result["date"],
+                result["home"],
+                "v",
+                result["away"]
+            )
+            continue
+
+        key = fixture_result_key(result)
+
+        # Keep the first version encountered. Existing results are
+        # considered first, followed by the team page and results page.
+        if key not in unique_results:
+            unique_results[key] = result
+
+    return list(unique_results.values())
+
+
+def deduplicate_fixtures(all_fixtures):
+    """
+    Deduplicate fixtures by date, time and team identity.
+    """
+    unique_fixtures = {}
+
+    for fixture in all_fixtures:
+        if same_team(fixture["home"], fixture["away"]):
+            print(
+                "Ignoring self-versus-self fixture:",
+                fixture["date"],
+                fixture["time"],
+                fixture["home"],
+                "v",
+                fixture["away"]
+            )
+            continue
+
+        key = (
+            fixture["date"],
+            fixture["time"],
+            result_identity_name(fixture["home"]),
+            result_identity_name(fixture["away"])
+        )
+
+        if key not in unique_fixtures:
+            unique_fixtures[key] = fixture
+
+    return list(unique_fixtures.values())
+
+
+def is_future_fixture(fixture, now):
+    """
+    Only retain fixtures whose kick-off is still in the future.
+    Uses UK local time rather than the GitHub runner's timezone.
+    """
+    dt = parse_datetime(
+        fixture["date"],
+        fixture["time"]
+    )
+
+    if not dt:
+        return False
+
+    dt = dt.replace(tzinfo=LONDON_TZ)
+
+    return dt >= now
+
+
 # ------------------------------------------------------------
 # MAIN PROCESS
 # ------------------------------------------------------------
@@ -501,7 +647,7 @@ existing_fixtures = [
 ]
 
 print("Existing results retained:", len(existing_results))
-print("Existing future fixtures retained:", len(existing_fixtures))
+print("Existing future fixtures read:", len(existing_fixtures))
 
 
 print()
@@ -561,52 +707,82 @@ all_results = (
     + results_page_results
 )
 
-unique_results = {}
-
-for result in all_results:
-    key = (
-        result["date"],
-        result_identity_name(result["home"]),
-        result_identity_name(result["away"])
-    )
-
-    unique_results[key] = result
-
-results = list(unique_results.values())
+results = deduplicate_results(all_results)
 
 
-# Preserve old fixtures and add newly discovered fixtures.
+# Parse newly discovered fixtures.
 fresh_fixtures = parse_future_fixtures(text)
 
 print()
 print("New future fixtures found:", len(fresh_fixtures))
 
 
-# Do not publish a results-only calendar if all future fixtures
-# have disappeared from both the old calendar and the new source.
-if not existing_fixtures and not fresh_fixtures:
-    raise RuntimeError(
-        "No future fixtures were found and there are no existing "
-        "future fixtures to preserve. Refusing to write an "
-        "incomplete calendar."
-    )
-
-
+# Preserve existing fixtures, but validate them below.
 all_fixtures = existing_fixtures + fresh_fixtures
 
-unique_fixtures = {}
+fixtures = deduplicate_fixtures(all_fixtures)
 
-for fixture in all_fixtures:
-    key = (
-        fixture["date"],
-        fixture["time"],
-        result_identity_name(fixture["home"]),
-        result_identity_name(fixture["away"])
+
+# Remove fixtures which have now become results.
+result_keys = {
+    fixture_result_key(result)
+    for result in results
+}
+
+fixtures_before_result_filter = len(fixtures)
+
+fixtures = [
+    fixture for fixture in fixtures
+    if fixture_result_key(fixture) not in result_keys
+]
+
+removed_as_results = fixtures_before_result_filter - len(fixtures)
+
+if removed_as_results:
+    print(
+        "Existing fixtures removed because results are now available:",
+        removed_as_results
     )
 
-    unique_fixtures[key] = fixture
 
-fixtures = list(unique_fixtures.values())
+# Remove fixtures which have already taken place.
+now = datetime.now(LONDON_TZ)
+
+fixtures_before_date_filter = len(fixtures)
+
+fixtures = [
+    fixture for fixture in fixtures
+    if is_future_fixture(fixture, now)
+]
+
+removed_as_expired = fixtures_before_date_filter - len(fixtures)
+
+if removed_as_expired:
+    print(
+        "Expired fixtures removed:",
+        removed_as_expired
+    )
+
+
+# Final safety check: reject any self-versus-self events.
+fixtures = [
+    fixture for fixture in fixtures
+    if not same_team(fixture["home"], fixture["away"])
+]
+
+results = [
+    result for result in results
+    if not same_team(result["home"], result["away"])
+]
+
+
+# Do not publish a results-only calendar if all future fixtures
+# have disappeared from both the old calendar and the new source.
+if not fixtures:
+    raise RuntimeError(
+        "No valid future fixtures remain after filtering. "
+        "The existing calendar has NOT been overwritten."
+    )
 
 
 print()
@@ -629,26 +805,6 @@ for fixture in fixtures:
         f'{fixture["date"]} {fixture["time"]} - '
         f'{fixture["home"]} v {fixture["away"]}'
     )
-
-
-# Remove fixtures which have now become results.
-result_keys = {
-    (
-        result["date"],
-        result_identity_name(result["home"]),
-        result_identity_name(result["away"])
-    )
-    for result in results
-}
-
-fixtures = [
-    fixture for fixture in fixtures
-    if (
-        fixture["date"],
-        result_identity_name(fixture["home"]),
-        result_identity_name(fixture["away"])
-    ) not in result_keys
-]
 
 
 events = results + fixtures
